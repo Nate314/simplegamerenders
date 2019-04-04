@@ -38,23 +38,20 @@ function tictactoeHTML(board, h) {
     return `${row(row1, '', h)}${row(row2, '', h)}${row(row3, '', h)}`;
 }
 
-
-setTimeout(() => {
-    const params = getParams(location.href);
-    const colorsParam = params.colors.split('.');
-    if (colorsParam && colorsParam.length === 3) {
-        xColor = colorsParam[0];
-        oColor = colorsParam[1];
-        defaultColor = colorsParam[2];
+const params = getParams(location.href);
+const colorsParam = params.colors.split('.');
+if (colorsParam && colorsParam.length === 3) {
+    xColor = colorsParam[0];
+    oColor = colorsParam[1];
+    defaultColor = colorsParam[2];
+}
+const boardParam = params.board.split('.');
+const board = [];
+boardParam.forEach(section => {
+    if (section.length == 1) {
+        board.push(section);
+    } else {
+        board.push(tictactoeHTML(section, 60));
     }
-    const boardParam = params.board.split('.');
-    const board = [];
-    boardParam.forEach(section => {
-        if (section.length == 1) {
-            board.push(section);
-        } else {
-            board.push(tictactoeHTML(section, 60));
-        }
-    });
-    document.getElementById('body').innerHTML = tictactoeHTML(board, 182);
-}, 10);
+});
+document.getElementById('body').innerHTML = tictactoeHTML(board, 182);
