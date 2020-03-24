@@ -39,7 +39,7 @@ function tictactoeHTML(board, h) {
     const row1 = `${col(board[0], classes)}${col(board[1], classes)}${col(board[2], classes)}`;
     const row2 = `${col(board[3], classes)}${col(board[4], classes)}${col(board[5], classes)}`;
     const row3 = `${col(board[6], classes)}${col(board[7], classes)}${col(board[8], classes)}`;
-    return `<div style="background-color:#2C2F33;">${row(row1, '', h)}${row(row2, '', h)}${row(row3, '', h)}</div>`;
+    return `<div style="background-color:#36393F;">${row(row1, '', h)}${row(row2, '', h)}${row(row3, '', h)}</div>`;
 }
 
 const params = getParams(location.href);
