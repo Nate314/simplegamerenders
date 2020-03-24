@@ -25,9 +25,13 @@ function row(inner, classes, height) {
 }
 
 function col(inner, classes) {
+    console.log(inner);
+    inner = 'xo'.includes(inner) || inner.length >= 9 ? inner
+        : `<span style="font-size:${40}%;
+                        position:absolute;
+                        transform:translate(-20px,20px);">${inner}</span>`;
     return `<div class="col ${classes}"
-    style="color:${inner == 'x' ? xColor : (inner == 'o' ? oColor : defaultColor)};"
-    >${inner}</div>`;
+        style="color:${inner == 'x' ? xColor : (inner == 'o' ? oColor : defaultColor)};">${inner}</div>`;
 }
 
 function tictactoeHTML(board, h) {
