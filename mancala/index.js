@@ -27,6 +27,8 @@ const appendChildren = (element, children) => children.forEach(child => element.
 function mancalaHTML(board, xColor, oColor) {
 	const [ player1Bank, ...player1Pits ] = board.splice(0, 7).map(x => +x);
 	const [ player2Bank, ...player2Pits ] = board.map(x => +x);
+	player2Pits.reverse();
+
 	console.log('player1', xColor, player1Bank, player1Pits);
 	console.log('player2', oColor, player2Bank, player2Pits);
 
