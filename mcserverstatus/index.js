@@ -81,7 +81,7 @@ if (isAllDefined([ params.serverName, params.serverAddress ])) {
       hostName: params.serverAddress,
       isServerOnline: params.isServerOnline === 'true',
       serverDescription: params.serverDescription,
-      onlineUsernameList: params.onlineUsernameList.split(','),
+      onlineUsernameList: params.onlineUsernameList.includes(',') ? params.onlineUsernameList.split(',') : [],
     });
   } else {
     console.log('retrieving server info');
