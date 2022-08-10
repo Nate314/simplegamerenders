@@ -1,4 +1,3 @@
-
 function getParams(url) {
   const params = {};
   const parser = document.createElement('a');
@@ -12,12 +11,15 @@ function getParams(url) {
   return params;
 };
 
-const getUserProfilePictureUrl = username => `https://minotar.net/helm/${username}/128.png`;
+function getUserProfilePictureUrl(username) {
+  return `https://minotar.net/helm/${username}/128.png`;
+}
 
 function getServerInfo(serverName, serverAddress) {
   return fetch(`https://api.mcsrvstat.us/2/${serverAddress}`)
     .then(resp => resp.json())
     .then(data => {
+      console.log('data', data);
       const hostName = data.hostname;
       const isServerOnline = data.online;
       const serverDescription = data.motd.clean;
@@ -32,26 +34,26 @@ function getServerInfo(serverName, serverAddress) {
   });
 }
 
-const params = getParams(location.href);
-getServerInfo(params.servername, params.serveraddress).then(x => {
+function renderHTML(serverInfo) {
+  console.log('renderHTML(', serverInfo, ')');
   const red = '#FF0000';
   const green = '#00FF00';
   const black = '#000000';
   const white = '#FFFFFF';
-  const isNoOneOnline = !x.onlineUsernameList?.length;
+  const isNoOneOnline = !serverInfo.onlineUsernameList?.length;
   document.getElementById('content').innerHTML = `
-    <div style="background: ${x.isServerOnline ? green : red}; height: 100vh; font-weight: 500; color: ${x.isServerOnline ? black : white};">
+    <div style="background: ${serverInfo.isServerOnline ? green : red}; height: 100vh; font-weight: 500; color: ${serverInfo.isServerOnline ? black : white};">
       <div class="container py-4">
         <div class="row">
-          <div class="col-md-6 col-sm-12">${x.serverName}</div>
-          <div class="col-md-6 col-sm-12">${x.serverDescription}</div>
-          <div class="col-md-6 col-sm-12">${x.hostName}</div>
-          <div class="col-md-6 col-sm-12">Server is ${x.isServerOnline ? 'online' : 'offline'}</div>
+          <div class="col-md-6 col-sm-12">${serverInfo.serverName}</div>
+          <div class="col-md-6 col-sm-12">${serverInfo.serverDescription}</div>
+          <div class="col-md-6 col-sm-12">${serverInfo.hostName}</div>
+          <div class="col-md-6 col-sm-12">Server is ${serverInfo.isServerOnline ? 'online' : 'offline'}</div>
           <div class="col-md-6 col-sm-12">${isNoOneOnline ? 'No one is crafting' : ''}</div>
         </div>
         <br />
         <div class="row">
-          ${isNoOneOnline ? '' : x.onlineUsernameList.map(username => `
+          ${isNoOneOnline ? '' : serverInfo.onlineUsernameList.map(username => `
             <div class="col">
               <div class="text-center">
                 <div>${username}</div>
@@ -63,4 +65,26 @@ getServerInfo(params.servername, params.serveraddress).then(x => {
       </div>
     </div>
   `;
-});
+}
+
+function isAllDefined(list) {
+  return list.map(x => x === undefined).filter(x => !x).length !== 0;
+}
+
+const params = getParams(location.href);
+console.log('params', params);
+if (isAllDefined([ params.serverName, params.serverAddress ])) {
+  if (isAllDefined([ params.isServerOnline, params.serverDescription, params.onlineUsernameList ])) {
+    console.log('all server info received in query string');
+    renderHTML({
+      serverName: params.serverName,
+      hostName: params.serverAddress,
+      isServerOnline: params.isServerOnline === 'true',
+      serverDescription: params.serverDescription,
+      onlineUsernameList: params.onlineUsernameList.split(','),
+    });
+  } else {
+    console.log('retrieving server info');
+    getServerInfo(params.serverName, params.serverAddress).then(x => renderHTML(x));
+  }
+}
