@@ -82,17 +82,20 @@ Locations are shown by default everywhere (unchanged from current behavior). In 
 ## Location Legend
 
 To cut down on repetition when many events share the same venue (common on the driftwood calendar), locations render as a short numbered badge (e.g. `[1]`) appended to the end of the event's title line — not on a separate line — to minimize vertical space per event:
-- Each distinct location string found among the rendered month's events is assigned a number, ordered by descending frequency (the most-common location gets `[1]`); ties keep first-appearance order for determinism.
-- A legend section lists each number next to its full location text, in that same frequency order.
+- Location strings are grouped by a normalized key (lowercased, punctuation stripped, whitespace collapsed) before numbering/counting, so minor formatting differences between events at "the same place" (e.g. `1700 W Santa Fe St, Olathe, KS 66061, USA` vs `1700 W Santa Fe St Olathe KS 66061 United States`) don't produce separate legend entries. Word-level differences (e.g. "USA" vs "United States") are NOT merged — out of scope, would need a maintained equivalence table.
+- Each normalized group is assigned a number, ordered by descending total occurrence count (the most-common location gets `[1]`); ties keep first-appearance order for determinism.
+- The group's display text (used in both the badge tooltip context and the legend) is its most-frequent original variant, not necessarily the first-seen one.
+- A legend section lists each number next to its canonical display text, in that same frequency order.
 - The `hideLocations` checkbox still hides the badge entirely (and its legend), same as it hid full location text before.
 
 ## Location Emoji Mapping
 
-Optional, repeatable `locationEmoji=<pattern>:<emoji>` query params let the caller prepend an emoji to matching location badges (e.g. `&locationEmoji=church:⛪&locationEmoji=pizza:🍕`), without hardcoding any specific category into the renderer:
-- `<pattern>` is a case-insensitive regex tested against the full location text; `<emoji>` is everything after the first `:` in the param value (so patterns can't themselves contain a `:`, an accepted limitation).
-- Mappings are evaluated in the order given in the URL; the first pattern that matches a location wins (at most one emoji per location).
+Optional, repeatable `locationEmoji=<pattern>:<emoji>` query params let the caller prepend an emoji to matching events/legend entries (e.g. `&locationEmoji=church:⛪&locationEmoji=pizza:🍕`), without hardcoding any specific category into the renderer:
+- `<pattern>` is a case-insensitive regex tested against the location text; `<emoji>` is everything after the first `:` in the param value (so patterns can't themselves contain a `:`, an accepted limitation).
+- Mappings are evaluated in the order given in the URL; the first pattern that matches wins (at most one emoji per location).
 - An invalid regex pattern is logged to the console and skipped rather than breaking the render.
-- The emoji renders prepended to the location badge in both the event line and the location legend (e.g. `⛪[1]`), and is omitted whenever `hideLocations=true` hides the badge itself.
+- On the event line, the emoji renders as a prefix before the time (e.g. `⛪ 9:30 AM – 10:30 AM — Sunday Morning Service [1]`) rather than next to the location badge, since that reads more naturally as a category marker for the whole event. In the legend, it still prefixes the `[n]` badge.
+- The emoji is omitted whenever `hideLocations=true` hides the location badge, since it's derived from location data.
 - These params are preserved across all button-bar navigation (Prev/Next/Today/theme/checkboxes) in `interactive=true` mode, the same as `calendarId`/`tz`.
 
 ## Event Time Ranges

@@ -228,28 +228,59 @@ function assignTagColors(events) {
   return colorsByTag;
 }
 
+function normalizeLocationKey(location) {
+  return location
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function assignLocationNumbers(events) {
-  const firstSeenOrder = [];
-  const countsByLocation = {};
+  // Different events for "the same place" often have slightly different
+  // location text (punctuation, casing, "USA" vs trailing comma, etc.), which
+  // would otherwise count as distinct locations. Group by a normalized key
+  // for numbering/counting, but keep every original variant's text so we can
+  // still pick a canonical (most-common variant) string to display.
+  const groupsByKey = {};
+  const keyOrder = [];
   events.forEach(event => {
     if (!event.location) {
       return;
     }
-    if (!countsByLocation[event.location]) {
-      countsByLocation[event.location] = 0;
-      firstSeenOrder.push(event.location);
+    const key = normalizeLocationKey(event.location);
+    if (!groupsByKey[key]) {
+      groupsByKey[key] = { count: 0, variantCounts: {} };
+      keyOrder.push(key);
     }
-    countsByLocation[event.location] += 1;
+    const group = groupsByKey[key];
+    group.count += 1;
+    group.variantCounts[event.location] = (group.variantCounts[event.location] || 0) + 1;
   });
 
   // Most-frequent locations get the lowest numbers; ties keep first-appearance order.
-  const sortedLocations = firstSeenOrder.slice().sort((a, b) => countsByLocation[b] - countsByLocation[a]);
+  const sortedKeys = keyOrder.slice().sort((a, b) => groupsByKey[b].count - groupsByKey[a].count);
+
+  const numberByKey = {};
+  const displayTextByNumber = {};
+  sortedKeys.forEach((key, index) => {
+    const number = index + 1;
+    numberByKey[key] = number;
+    const variantCounts = groupsByKey[key].variantCounts;
+    const canonicalVariant = Object.keys(variantCounts)
+      .sort((a, b) => variantCounts[b] - variantCounts[a])[0];
+    displayTextByNumber[number] = canonicalVariant;
+  });
 
   const numbersByLocation = {};
-  sortedLocations.forEach((location, index) => {
-    numbersByLocation[location] = index + 1;
+  events.forEach(event => {
+    if (!event.location) {
+      return;
+    }
+    numbersByLocation[event.location] = numberByKey[normalizeLocationKey(event.location)];
   });
-  return numbersByLocation;
+
+  return { numbersByLocation, displayTextByNumber };
 }
 
 function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth, rawLocationEmojiParams }) {
@@ -306,17 +337,16 @@ function renderLegend(colorsByTag) {
   `;
 }
 
-function renderLocationLegend(numbersByLocation, hideLocations, locationEmojiMappings) {
-  const locations = Object.keys(numbersByLocation);
-  if (hideLocations || !locations.length) {
+function renderLocationLegend(displayTextByNumber, hideLocations, locationEmojiMappings) {
+  const numbers = Object.keys(displayTextByNumber).map(Number).sort((a, b) => a - b);
+  if (hideLocations || !numbers.length) {
     return '';
   }
-  const sorted = locations.sort((a, b) => numbersByLocation[a] - numbersByLocation[b]);
   return `
     <div class="legend">
       <div class="legend-label">Locations:</div>
-      ${sorted.map(location => `
-        <div class="legend-item">${getLocationEmoji(location, locationEmojiMappings)}[${numbersByLocation[location]}] ${escapeHtml(location)}</div>
+      ${numbers.map(number => `
+        <div class="legend-item">${getLocationEmoji(displayTextByNumber[number], locationEmojiMappings)}[${number}] ${escapeHtml(displayTextByNumber[number])}</div>
       `).join('')}
     </div>
   `;
@@ -325,15 +355,16 @@ function renderLocationLegend(numbersByLocation, hideLocations, locationEmojiMap
 function renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions, hideLocations, locationEmojiMappings) {
   const color = event.tag ? colorsByTag[event.tag] : null;
   const style = color ? ` style="color: ${color}; border-left: 2px solid ${color};"` : '';
+  const showLocation = !hideLocations && event.location;
+  const emojiPrefix = showLocation ? getLocationEmoji(event.location, locationEmojiMappings) : '';
+  const emojiSpacer = emojiPrefix ? ' ' : '';
   const timePrefix = event.isAllDay ? '' : `${getTimeInTz(event.start, tz)} – ${getTimeInTz(event.end, tz)} — `;
-  const locationSuffix = (!hideLocations && event.location)
-    ? ` ${getLocationEmoji(event.location, locationEmojiMappings)}[${numbersByLocation[event.location]}]`
-    : '';
+  const locationSuffix = showLocation ? ` [${numbersByLocation[event.location]}]` : '';
   const descriptionHtml = (showDescriptions && event.description) ? `<div class="event-detail">${escapeHtml(event.description)}</div>` : '';
 
   return `
     <div class="event"${style}>
-      <div class="event-title">${timePrefix}${escapeHtml(event.title)}${escapeHtml(locationSuffix)}</div>
+      <div class="event-title">${escapeHtml(emojiPrefix)}${escapeHtml(emojiSpacer)}${timePrefix}${escapeHtml(event.title)}${escapeHtml(locationSuffix)}</div>
       ${descriptionHtml}
     </div>
   `;
@@ -343,7 +374,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
   const backgroundColor = theme === 'light' ? '#FFFFFF' : '#36393F';
   const textColor = theme === 'light' ? '#000000' : '#FFFFFF';
   const colorsByTag = assignTagColors(events);
-  const numbersByLocation = assignLocationNumbers(events);
+  const { numbersByLocation, displayTextByNumber } = assignLocationNumbers(events);
 
   const eventsByDay = {};
   events.forEach(event => {
@@ -380,7 +411,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
     cells.push('<div class="day-cell"></div>');
   }
 
-  const legendsHtml = `${renderLegend(colorsByTag)}${renderLocationLegend(numbersByLocation, hideLocations, locationEmojiMappings)}`;
+  const legendsHtml = `${renderLegend(colorsByTag)}${renderLocationLegend(displayTextByNumber, hideLocations, locationEmojiMappings)}`;
   const sidebarHtml = legendsHtml ? `<div class="legend-sidebar">${legendsHtml}</div>` : '';
 
   document.getElementById('content').innerHTML = `
