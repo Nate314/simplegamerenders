@@ -132,6 +132,16 @@ Day cells that overflow (see Equal-Height Grid) get theme-aware scrollbar stylin
 - `scrollbar-width: thin` and `scrollbar-color` (Firefox) plus `::-webkit-scrollbar*` rules (Chrome/Safari/Edge), scoped under `.theme-dark` / `.theme-light` classes applied to the page root based on the `theme` param.
 - Dark theme uses a muted gray thumb (`#5a5d63`) on a transparent track; light theme uses a lighter gray (`#c0c0c0`).
 
+## Print Styling
+
+A `@media print` block makes printing the page (e.g. via a browser's print dialog) behave predictably regardless of the params used for the on-screen render:
+- `@page { size: landscape; }` requests landscape orientation by default.
+- The button bar (`interactive=true` nav/toggle/checkboxes) is hidden — it's a screen-only interaction affordance, not something meaningful on a printed page.
+- Today's cell highlight is removed — printouts are typically made ahead of time or reused, so "today" at render time isn't necessarily meaningful when the page is actually printed/read.
+- The page always prints in the light color scheme, overriding whichever `theme` was used on screen, via `!important` rules that outrank the inline `background`/`color` styles JS sets on `.calendar-page` (this is standard CSS cascade behavior — an `!important` author-stylesheet rule beats a non-`!important` inline style).
+
+Out of scope: the grid's fixed-viewport-height/`overflow: hidden` layout (see Equal-Height Grid) is unchanged for print, so a day cell with more events than fit its row will still be clipped rather than reflowing across a taller printed page — print output isn't paginated/reflowed, only re-themed per the four points above.
+
 ## Equal-Height Grid
 
 - Week rows divide the available viewport height evenly: `height: calc((100vh - header - legend - button bar) / numWeeksInMonth)`, so every row is the same height and the grid fills the screenshot regardless of how many weeks the rendered month has (4–6).
