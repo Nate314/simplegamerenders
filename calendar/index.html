@@ -17,6 +17,10 @@
     <!-- optional, repeatable: &locationEmoji=<regex>:<emoji> prepends an emoji to -->
     <!-- matching locations' badges, e.g. &locationEmoji=church:%E2%9B%AA -->
     <!-- (case-insensitive regex match against the location text; first match wins) -->
+    <!-- optional: &apiKey=<Google Cloud API key> switches from the iCal export -->
+    <!-- (needs a CORS proxy, works locally but corsproxy.io blocks real domains -->
+    <!-- on its free tier) to the real Google Calendar API v3, which sends its -->
+    <!-- own CORS headers -- use this for production/GitHub Pages deployments -->
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
