@@ -81,14 +81,26 @@ Locations are shown by default everywhere (unchanged from current behavior). In 
 
 ## Location Legend
 
-To cut down on repetition when many events share the same venue (common on the driftwood calendar), locations render as a short numbered badge (e.g. `[1]`) instead of the full address inline:
+To cut down on repetition when many events share the same venue (common on the driftwood calendar), locations render as a short numbered badge (e.g. `[1]`) appended to the end of the event's title line — not on a separate line — to minimize vertical space per event:
 - Each distinct location string found among the rendered month's events is assigned a number, in order of first appearance.
-- A legend section (styled like the tag-color legend) lists each number next to its full location text.
+- A legend section lists each number next to its full location text.
 - The `hideLocations` checkbox still hides the badge entirely (and its legend), same as it hid full location text before.
 
 ## Event Time Ranges
 
 Timed (non-all-day) events show a start–end time range (e.g. `9:30 AM – 10:30 AM`) instead of just the start time. All-day events still show no time, as before.
+
+## Legend Presentation
+
+Both legends (tag colors, locations) are labeled and list one item per line rather than wrapping inline:
+- The tag legend is headed "Tags:"; the location legend is headed "Locations:".
+- Each entry (color swatch + tag, or `[n]` + address) renders on its own line beneath the label.
+
+## Scrollbar Theming
+
+Day cells that overflow (see Equal-Height Grid) get theme-aware scrollbar styling instead of the browser's default, so they blend into dark mode instead of showing a jarring light-colored default scrollbar:
+- `scrollbar-width: thin` and `scrollbar-color` (Firefox) plus `::-webkit-scrollbar*` rules (Chrome/Safari/Edge), scoped under `.theme-dark` / `.theme-light` classes applied to the page root based on the `theme` param.
+- Dark theme uses a muted gray thumb (`#5a5d63`) on a transparent track; light theme uses a lighter gray (`#c0c0c0`).
 
 ## Equal-Height Grid
 

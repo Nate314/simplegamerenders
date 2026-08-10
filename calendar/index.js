@@ -235,10 +235,11 @@ function renderLegend(colorsByTag) {
   }
   return `
     <div class="legend">
+      <div class="legend-label">Tags:</div>
       ${tags.map(tag => `
-        <span class="legend-item">
+        <div class="legend-item">
           <span class="legend-swatch" style="background: ${colorsByTag[tag]};"></span>${escapeHtml(tag)}
-        </span>
+        </div>
       `).join('')}
     </div>
   `;
@@ -252,8 +253,9 @@ function renderLocationLegend(numbersByLocation, hideLocations) {
   const sorted = locations.sort((a, b) => numbersByLocation[a] - numbersByLocation[b]);
   return `
     <div class="legend">
+      <div class="legend-label">Locations:</div>
       ${sorted.map(location => `
-        <span class="legend-item">[${numbersByLocation[location]}] ${escapeHtml(location)}</span>
+        <div class="legend-item">[${numbersByLocation[location]}] ${escapeHtml(location)}</div>
       `).join('')}
     </div>
   `;
@@ -263,13 +265,12 @@ function renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions
   const color = event.tag ? colorsByTag[event.tag] : null;
   const style = color ? ` style="color: ${color}; border-left: 2px solid ${color};"` : '';
   const timePrefix = event.isAllDay ? '' : `${getTimeInTz(event.start, tz)} – ${getTimeInTz(event.end, tz)} — `;
-  const locationHtml = (!hideLocations && event.location) ? `<div class="event-detail">[${numbersByLocation[event.location]}]</div>` : '';
+  const locationSuffix = (!hideLocations && event.location) ? ` [${numbersByLocation[event.location]}]` : '';
   const descriptionHtml = (showDescriptions && event.description) ? `<div class="event-detail">${escapeHtml(event.description)}</div>` : '';
 
   return `
     <div class="event"${style}>
-      <div class="event-title">${timePrefix}${escapeHtml(event.title)}</div>
-      ${locationHtml}
+      <div class="event-title">${timePrefix}${escapeHtml(event.title)}${escapeHtml(locationSuffix)}</div>
       ${descriptionHtml}
     </div>
   `;
@@ -317,7 +318,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
   }
 
   document.getElementById('content').innerHTML = `
-    <div class="calendar-page" style="background: ${backgroundColor}; color: ${textColor};">
+    <div class="calendar-page theme-${theme}" style="background: ${backgroundColor}; color: ${textColor};">
       ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz) })}
       <h4 class="text-center month-title">${MONTH_NAMES[month - 1]} ${year}</h4>
       ${renderLegend(colorsByTag)}
