@@ -186,6 +186,26 @@ body {
 .event-detail {
     opacity: 0.85;
 }
+
+@media print {
+    @page {
+        size: landscape;
+    }
+
+    .btn-bar {
+        display: none !important;
+    }
+
+    .day-cell-today {
+        box-shadow: none !important;
+        background: none !important;
+    }
+
+    .calendar-page {
+        background: #FFFFFF !important;
+        color: #000000 !important;
+    }
+}
     </style>
 </head>
 <body>
