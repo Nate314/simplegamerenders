@@ -147,7 +147,7 @@ function toEventRecord(summary, location, description, start, end, isAllDay) {
   return { tag, title, location, description, start, end, isAllDay };
 }
 
-function fetchEventsForMonth(calendarId, tz, year, month) {
+function fetchEventsFromIcs(calendarId, tz, year, month) {
   return fetch(getIcsUrl(calendarId))
     .then(resp => {
       if (!resp.ok) {
@@ -215,6 +215,42 @@ function fetchEventsForMonth(calendarId, tz, year, month) {
 
       return events;
     });
+}
+
+function fetchEventsFromApi(calendarId, apiKey, year, month) {
+  const rangeStart = new Date(Date.UTC(year, month - 1, 1));
+  const rangeEnd = new Date(Date.UTC(year, month, 1));
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`
+    + `?key=${encodeURIComponent(apiKey)}`
+    + `&singleEvents=true`
+    + `&orderBy=startTime`
+    + `&timeMin=${encodeURIComponent(rangeStart.toISOString())}`
+    + `&timeMax=${encodeURIComponent(rangeEnd.toISOString())}`;
+
+  return fetch(url)
+    .then(resp => {
+      if (!resp.ok) {
+        throw new Error(`Failed to fetch calendar (status ${resp.status})`);
+      }
+      return resp.json();
+    })
+    .then(data => (data.items || []).map(item => {
+      const isAllDay = !!item.start.date;
+      const start = new Date(isAllDay ? item.start.date : item.start.dateTime);
+      const end = new Date(isAllDay ? item.end.date : item.end.dateTime);
+      return toEventRecord(item.summary, item.location, item.description, start, end, isAllDay);
+    }));
+}
+
+function fetchEventsForMonth(calendarId, tz, year, month, apiKey) {
+  // The iCal export + CORS proxy path works for local/dev use, but corsproxy.io's
+  // free tier rejects requests from real (non-localhost) origins. Passing an
+  // apiKey opts into Google's actual Calendar API v3, which sends its own CORS
+  // headers and needs no proxy -- the supported path for production deploys.
+  if (apiKey) {
+    return fetchEventsFromApi(calendarId, apiKey, year, month);
+  }
+  return fetchEventsFromIcs(calendarId, tz, year, month);
 }
 
 function assignTagColors(events) {
@@ -303,7 +339,7 @@ function assignLocationNumbers(events) {
   return { numbersByLocation, displayTextByNumber };
 }
 
-function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth, rawLocationEmojiParams }) {
+function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth, rawLocationEmojiParams, apiKey }) {
   if (!interactive) {
     return '';
   }
@@ -312,7 +348,8 @@ function renderButtonBar({ calendarId, tz, year, month, theme, interactive, show
   const otherTheme = theme === 'dark' ? 'light' : 'dark';
   const currentMonth = formatMonthParam({ year, month });
   const todayMonth = formatMonthParam(todayYearMonth);
-  const baseParams = `calendarId=${encodeURIComponent(calendarId)}&tz=${encodeURIComponent(tz)}&interactive=true${rawLocationEmojiParams}`;
+  const apiKeyParam = apiKey ? `&apiKey=${encodeURIComponent(apiKey)}` : '';
+  const baseParams = `calendarId=${encodeURIComponent(calendarId)}&tz=${encodeURIComponent(tz)}&interactive=true${apiKeyParam}${rawLocationEmojiParams}`;
   const isOnCurrentMonth = currentMonth === todayMonth;
 
   const toggleFlags = showDescriptions || hideLocations
@@ -390,7 +427,7 @@ function renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions
   `;
 }
 
-function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, locationEmojiMappings, events }) {
+function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, locationEmojiMappings, apiKey, events }) {
   const backgroundColor = theme === 'light' ? '#FFFFFF' : '#36393F';
   const textColor = theme === 'light' ? '#000000' : '#FFFFFF';
   const colorsByTag = assignTagColors(events);
@@ -436,7 +473,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
 
   document.getElementById('content').innerHTML = `
     <div class="calendar-page theme-${theme}" style="background: ${backgroundColor}; color: ${textColor};">
-      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz), rawLocationEmojiParams: getRawParamString(location.href, 'locationEmoji') })}
+      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz), rawLocationEmojiParams: getRawParamString(location.href, 'locationEmoji'), apiKey })}
       <h4 class="text-center month-title">${MONTH_NAMES[month - 1]} ${year}</h4>
       <div class="main-area">
         <div class="calendar-grid" style="grid-template-rows: auto repeat(${numWeeks}, 1fr);">
@@ -470,13 +507,14 @@ if (!isAllDefined([params.calendarId, params.tz])) {
   const locationEmojiMappings = parseLocationEmojiMappings(location.href);
   const { year, month } = getTargetYearMonth(params.month, params.tz);
 
-  fetchEventsForMonth(params.calendarId, params.tz, year, month)
+  fetchEventsForMonth(params.calendarId, params.tz, year, month, params.apiKey)
     .then(events => renderCalendar({
       calendarId: params.calendarId,
       tz: params.tz,
       year,
       month,
       locationEmojiMappings,
+      apiKey: params.apiKey,
       theme,
       interactive,
       showDescriptions,

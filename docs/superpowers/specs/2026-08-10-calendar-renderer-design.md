@@ -20,13 +20,30 @@ Optional:
 - `month` — `YYYY-MM`; defaults to the current month in the given `tz` if omitted
 - `interactive` — `true`/absent; when `true`, renders a button bar (see below)
 - `theme` — `dark` (default) or `light`
+- `apiKey` — a Google Cloud API key; when present, switches the data source from the iCal export to the Google Calendar API v3 (see Data Source below)
 
-## Data Flow
+## Data Source
+
+There are two ways to fetch calendar data, selected by whether `apiKey` is present. Both were exercised in practice: the iCal path was the original design and works great locally, but broke once deployed to GitHub Pages.
+
+### Default: iCal export + CORS proxy (no `apiKey`)
 
 1. Build the Google iCal export URL: `https://calendar.google.com/calendar/ical/<encodeURIComponent(calendarId)>/public/basic.ics?_=<cacheBucket>`, where `cacheBucket = Math.floor(Date.now() / 300000)` (a 5-minute window). The `_=<cacheBucket>` cache-busting param is required: corsproxy.io caches responses by URL for up to an hour (`cache-control: public, max-age=3600`) independent of Google's own freshness, so without it, recently added/edited calendar events can silently fail to appear for up to an hour (confirmed via manual test — a stale `x-cache-status: HIT` response was missing an event added minutes earlier; adding the cache-busting param produced a fresh `MISS` with the event present). Bucketing to 5 minutes (rather than a per-request timestamp) still bounds staleness to at most 5 minutes while letting repeated requests within the same window hit the proxy's cache.
-2. Google's iCal endpoint does not send `Access-Control-Allow-Origin`, so a direct browser `fetch()` is blocked by CORS (confirmed via manual test). Fetch through a CORS passthrough instead: `https://corsproxy.io/?url=<encodeURIComponent(ical URL)>` (confirmed working end-to-end in a real browser — returns 200 with `access-control-allow-origin: *`). Note: a bare `curl` without browser-like headers gets a 403 from corsproxy.io, and `api.allorigins.win` was tried first but proved flaky (intermittent 503/522/408) during testing — stick with corsproxy.io.
+2. Google's iCal endpoint does not send `Access-Control-Allow-Origin`, so a direct browser `fetch()` is blocked by CORS (confirmed via manual test). Fetch through a CORS passthrough instead: `https://corsproxy.io/?url=<encodeURIComponent(ical URL)>`.
 3. Parse the fetched `.ics` text with **ical.js**, loaded via CDN `<script>` tag (matching the existing Bootstrap CDN pattern in `mcserverstatus/index.html`). Use ical.js's recurrence expansion to correctly materialize RRULE-based recurring events.
 4. Filter/expand events to those with an occurrence falling within the target month, converting occurrence times to the requested `tz`.
+
+**Known limitation, confirmed in production:** corsproxy.io's free tier rejects requests from real (non-localhost) origins — `{"error":"Free usage is limited to localhost and development environments..."}`, HTTP 403 — so this path only works when testing locally. The `api.allorigins.win` fallback considered earlier is also unreliable (intermittent 500/522 in testing). **This path is effectively dev-only**; use `apiKey` for any real deployment.
+
+### With `apiKey`: Google Calendar API v3 (production-capable)
+
+1. Call `https://www.googleapis.com/calendar/v3/calendars/<encodeURIComponent(calendarId)>/events?key=<apiKey>&singleEvents=true&orderBy=startTime&timeMin=<ISO>&timeMax=<ISO>`, with `timeMin`/`timeMax` set to the target month's UTC boundaries.
+2. `singleEvents=true` makes the API expand recurring events (with per-occurrence overrides already applied) server-side, so no ical.js recurrence logic is needed on this path.
+3. Map each JSON `items[]` entry to the same internal event record shape used by the iCal path (`summary`/`location`/`description`/`start`/`end`/all-day flag from `start.date` vs `start.dateTime`), so all downstream rendering (tags, location badges/legend, emoji mapping, descriptions) works identically regardless of data source.
+4. Confirmed via `curl` that `googleapis.com` sends `Access-Control-Allow-Origin` reflecting the request's `Origin` header even on a 400 (invalid key) response — no proxy needed, so this path works from any real domain.
+5. The API key still needs to exist (Google Cloud Console, Calendar API enabled, restricted by HTTP referrer to the deployment domain) — an external setup step outside this repo, not something the renderer can automate.
+
+**On exposing the key client-side:** the key is embedded in a URL param and visible to anyone viewing the page source — this was a deliberate, discussed tradeoff, not an oversight. A key restricted by HTTP referrer to the deployment domain and to only the Calendar API is Google's own documented pattern for browser-side calls to its APIs (distinct from an unrestricted server-side key). Since the calendar is already public and an API-key-only request can't write/modify calendar data, the practical exposure if the key is scraped and reused elsewhere is limited to quota exhaustion (recoverable by regenerating the key) — not a data breach or billed cost. A fully key-hidden approach (a small serverless proxy holding the key server-side) was considered and explicitly deferred as out of scope, since it would add real infrastructure beyond this static-site repo.
 
 ## Rendering
 
