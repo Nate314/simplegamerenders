@@ -228,12 +228,32 @@ function assignTagColors(events) {
   return colorsByTag;
 }
 
+// Small equivalence table for common address abbreviations, so e.g.
+// "USA" and "United States" or "St" and "Street" normalize to the same key.
+// Heuristic and address-specific (e.g. "St" could mean "Saint") -- an
+// accepted tradeoff for merging near-duplicate locations in a legend.
+const LOCATION_WORD_EQUIVALENCE = {
+  usa: 'united states',
+  st: 'street',
+  ave: 'avenue',
+  dr: 'drive',
+  rd: 'road',
+  blvd: 'boulevard',
+  ln: 'lane',
+  ct: 'court',
+  hwy: 'highway',
+};
+
 function normalizeLocationKey(location) {
-  return location
+  const stripped = location
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
+  return stripped
+    .split(' ')
+    .map(word => LOCATION_WORD_EQUIVALENCE[word] || word)
+    .join(' ');
 }
 
 function assignLocationNumbers(events) {
