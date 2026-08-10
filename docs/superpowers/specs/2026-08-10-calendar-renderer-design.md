@@ -69,9 +69,9 @@ Each event line in a day cell shows `time — summary`, followed by the event's 
 
 Event summaries matching `^\[([^\]]+)\]` (e.g. `[Not a Driftwood Event] Pizza Ranch`) are treated as tagged:
 - The bracketed tag (e.g. `Not a Driftwood Event`) is stripped from the displayed title.
-- Each distinct tag found among the rendered month's events is assigned a color from a small fixed palette, cycling if there are more distinct tags than palette colors. This is generic — not hardcoded to any specific tag string.
-- The assigned color is applied to that event's text/left-border in the grid.
-- A small legend renders below the month header, listing each distinct tag next to its color swatch, so the coloring is decodable from a screenshot alone.
+- Each distinct tag found among the rendered month's events is assigned a color from a small fixed palette (cycling if there are more distinct tags than palette colors) *and* a left-border style (`solid`/`dashed`/`dotted`/`double`, also cycling, independently of the color palette's length). This is generic — not hardcoded to any specific tag string.
+- The assigned color/border-style pair is applied to that event's text/left-border in the grid. Pairing a border style with the color means tags stay distinguishable by shape even when printed in black and white, where color alone becomes indistinguishable grays.
+- A small legend renders below the month header, listing each distinct tag next to a swatch showing its color+border-style, so the coding is decodable from a screenshot (or a B&W printout) alone.
 - Events without a bracketed prefix use the existing default event color.
 
 ## Today Highlight and Navigation
