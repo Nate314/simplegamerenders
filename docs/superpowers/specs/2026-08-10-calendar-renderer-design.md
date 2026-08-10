@@ -86,6 +86,15 @@ To cut down on repetition when many events share the same venue (common on the d
 - A legend section lists each number next to its full location text, in that same frequency order.
 - The `hideLocations` checkbox still hides the badge entirely (and its legend), same as it hid full location text before.
 
+## Location Emoji Mapping
+
+Optional, repeatable `locationEmoji=<pattern>:<emoji>` query params let the caller prepend an emoji to matching location badges (e.g. `&locationEmoji=church:⛪&locationEmoji=pizza:🍕`), without hardcoding any specific category into the renderer:
+- `<pattern>` is a case-insensitive regex tested against the full location text; `<emoji>` is everything after the first `:` in the param value (so patterns can't themselves contain a `:`, an accepted limitation).
+- Mappings are evaluated in the order given in the URL; the first pattern that matches a location wins (at most one emoji per location).
+- An invalid regex pattern is logged to the console and skipped rather than breaking the render.
+- The emoji renders prepended to the location badge in both the event line and the location legend (e.g. `⛪[1]`), and is omitted whenever `hideLocations=true` hides the badge itself.
+- These params are preserved across all button-bar navigation (Prev/Next/Today/theme/checkboxes) in `interactive=true` mode, the same as `calendarId`/`tz`.
+
 ## Event Time Ranges
 
 Timed (non-all-day) events show a start–end time range (e.g. `9:30 AM – 10:30 AM`) instead of just the start time. All-day events still show no time, as before.

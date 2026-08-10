@@ -26,6 +26,53 @@ function isAllDefined(list) {
   return list.every(x => x !== undefined && x !== '');
 }
 
+function getAllParamValues(url, key) {
+  const parser = document.createElement('a');
+  parser.href = url;
+  const query = parser.search.substring(1);
+  return query.split('&')
+    .map(pair => pair.split('='))
+    .filter(pair => pair[0] === key)
+    .map(pair => decodeURIComponent(pair[1] || ''));
+}
+
+function getRawParamString(url, key) {
+  const parser = document.createElement('a');
+  parser.href = url;
+  const query = parser.search.substring(1);
+  return query.split('&')
+    .filter(pair => pair.split('=')[0] === key)
+    .map(pair => `&${pair}`)
+    .join('');
+}
+
+function parseLocationEmojiMappings(url) {
+  return getAllParamValues(url, 'locationEmoji')
+    .map(value => {
+      const separatorIndex = value.indexOf(':');
+      if (separatorIndex === -1) {
+        return null;
+      }
+      const pattern = value.slice(0, separatorIndex);
+      const emoji = value.slice(separatorIndex + 1);
+      try {
+        return { regex: new RegExp(pattern, 'i'), emoji };
+      } catch (err) {
+        console.error('Invalid locationEmoji pattern:', pattern, err);
+        return null;
+      }
+    })
+    .filter(mapping => mapping !== null);
+}
+
+function getLocationEmoji(location, mappings) {
+  if (!location) {
+    return '';
+  }
+  const match = mappings.find(mapping => mapping.regex.test(location));
+  return match ? match.emoji : '';
+}
+
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text == null ? '' : text;
@@ -205,7 +252,7 @@ function assignLocationNumbers(events) {
   return numbersByLocation;
 }
 
-function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth }) {
+function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth, rawLocationEmojiParams }) {
   if (!interactive) {
     return '';
   }
@@ -214,7 +261,7 @@ function renderButtonBar({ calendarId, tz, year, month, theme, interactive, show
   const otherTheme = theme === 'dark' ? 'light' : 'dark';
   const currentMonth = formatMonthParam({ year, month });
   const todayMonth = formatMonthParam(todayYearMonth);
-  const baseParams = `calendarId=${encodeURIComponent(calendarId)}&tz=${encodeURIComponent(tz)}&interactive=true`;
+  const baseParams = `calendarId=${encodeURIComponent(calendarId)}&tz=${encodeURIComponent(tz)}&interactive=true${rawLocationEmojiParams}`;
   const isOnCurrentMonth = currentMonth === todayMonth;
 
   const toggleFlags = showDescriptions || hideLocations
@@ -259,7 +306,7 @@ function renderLegend(colorsByTag) {
   `;
 }
 
-function renderLocationLegend(numbersByLocation, hideLocations) {
+function renderLocationLegend(numbersByLocation, hideLocations, locationEmojiMappings) {
   const locations = Object.keys(numbersByLocation);
   if (hideLocations || !locations.length) {
     return '';
@@ -269,17 +316,19 @@ function renderLocationLegend(numbersByLocation, hideLocations) {
     <div class="legend">
       <div class="legend-label">Locations:</div>
       ${sorted.map(location => `
-        <div class="legend-item">[${numbersByLocation[location]}] ${escapeHtml(location)}</div>
+        <div class="legend-item">${getLocationEmoji(location, locationEmojiMappings)}[${numbersByLocation[location]}] ${escapeHtml(location)}</div>
       `).join('')}
     </div>
   `;
 }
 
-function renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions, hideLocations) {
+function renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions, hideLocations, locationEmojiMappings) {
   const color = event.tag ? colorsByTag[event.tag] : null;
   const style = color ? ` style="color: ${color}; border-left: 2px solid ${color};"` : '';
   const timePrefix = event.isAllDay ? '' : `${getTimeInTz(event.start, tz)} – ${getTimeInTz(event.end, tz)} — `;
-  const locationSuffix = (!hideLocations && event.location) ? ` [${numbersByLocation[event.location]}]` : '';
+  const locationSuffix = (!hideLocations && event.location)
+    ? ` ${getLocationEmoji(event.location, locationEmojiMappings)}[${numbersByLocation[event.location]}]`
+    : '';
   const descriptionHtml = (showDescriptions && event.description) ? `<div class="event-detail">${escapeHtml(event.description)}</div>` : '';
 
   return `
@@ -290,7 +339,7 @@ function renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions
   `;
 }
 
-function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, events }) {
+function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, locationEmojiMappings, events }) {
   const backgroundColor = theme === 'light' ? '#FFFFFF' : '#36393F';
   const textColor = theme === 'light' ? '#000000' : '#FFFFFF';
   const colorsByTag = assignTagColors(events);
@@ -318,7 +367,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
   for (let day = 1; day <= totalDays; day++) {
     const dayKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayEvents = (eventsByDay[dayKey] || []).sort((a, b) => a.start - b.start);
-    const eventsHtml = dayEvents.map(event => renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions, hideLocations)).join('');
+    const eventsHtml = dayEvents.map(event => renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions, hideLocations, locationEmojiMappings)).join('');
     const isToday = dayKey === todayKey;
     cells.push(`
       <div class="day-cell${isToday ? ' day-cell-today' : ''}">
@@ -331,12 +380,12 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
     cells.push('<div class="day-cell"></div>');
   }
 
-  const legendsHtml = `${renderLegend(colorsByTag)}${renderLocationLegend(numbersByLocation, hideLocations)}`;
+  const legendsHtml = `${renderLegend(colorsByTag)}${renderLocationLegend(numbersByLocation, hideLocations, locationEmojiMappings)}`;
   const sidebarHtml = legendsHtml ? `<div class="legend-sidebar">${legendsHtml}</div>` : '';
 
   document.getElementById('content').innerHTML = `
     <div class="calendar-page theme-${theme}" style="background: ${backgroundColor}; color: ${textColor};">
-      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz) })}
+      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz), rawLocationEmojiParams: getRawParamString(location.href, 'locationEmoji') })}
       <h4 class="text-center month-title">${MONTH_NAMES[month - 1]} ${year}</h4>
       <div class="main-area">
         <div class="calendar-grid" style="grid-template-rows: auto repeat(${numWeeks}, 1fr);">
@@ -367,6 +416,7 @@ if (!isAllDefined([params.calendarId, params.tz])) {
   const interactive = params.interactive === 'true';
   const showDescriptions = interactive && params.showDescriptions === 'true';
   const hideLocations = interactive && params.hideLocations === 'true';
+  const locationEmojiMappings = parseLocationEmojiMappings(location.href);
   const { year, month } = getTargetYearMonth(params.month, params.tz);
 
   fetchEventsForMonth(params.calendarId, params.tz, year, month)
@@ -375,6 +425,7 @@ if (!isAllDefined([params.calendarId, params.tz])) {
       tz: params.tz,
       year,
       month,
+      locationEmojiMappings,
       theme,
       interactive,
       showDescriptions,
