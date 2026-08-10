@@ -4,6 +4,8 @@ const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
+const TAG_COLORS = ['#e67e22', '#9b59b6', '#1abc9c', '#e74c3c', '#3498db', '#f1c40f', '#2ecc71', '#95a5a6'];
+const TAG_PATTERN = /^\[([^\]]+)\]\s*/;
 
 function getParams(url) {
   const params = {};
@@ -22,6 +24,12 @@ function getParams(url) {
 
 function isAllDefined(list) {
   return list.every(x => x !== undefined && x !== '');
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text == null ? '' : text;
+  return div.innerHTML;
 }
 
 function getIcsUrl(calendarId) {
@@ -71,6 +79,19 @@ function daysInMonth(year, month) {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+function splitTag(summary) {
+  const match = TAG_PATTERN.exec(summary || '');
+  if (!match) {
+    return { tag: null, title: summary || '' };
+  }
+  return { tag: match[1], title: summary.slice(match[0].length) };
+}
+
+function toEventRecord(summary, location, description, start, isAllDay) {
+  const { tag, title } = splitTag(summary);
+  return { tag, title, location, description, start, isAllDay };
+}
+
 function fetchEventsForMonth(calendarId, tz, year, month) {
   return fetch(getIcsUrl(calendarId))
     .then(resp => {
@@ -111,24 +132,43 @@ function fetchEventsForMonth(calendarId, tz, year, month) {
             }
             if (occurrenceStart >= rangeStart) {
               const details = event.getOccurrenceDetails(next);
-              events.push({
-                summary: details.item.summary,
-                start: details.startDate.toJSDate(),
-                isAllDay: details.startDate.isDate,
-              });
+              events.push(toEventRecord(
+                details.item.summary,
+                details.item.location,
+                details.item.description,
+                details.startDate.toJSDate(),
+                details.startDate.isDate,
+              ));
             }
           }
         } else {
           const start = event.startDate.toJSDate();
           const dayKey = getDateKeyInTz(start, tz);
           if (dayKey.startsWith(monthKeyPrefix)) {
-            events.push({ summary: event.summary, start, isAllDay: event.startDate.isDate });
+            events.push(toEventRecord(
+              event.summary,
+              event.location,
+              event.description,
+              start,
+              event.startDate.isDate,
+            ));
           }
         }
       });
 
       return events;
     });
+}
+
+function assignTagColors(events) {
+  const colorsByTag = {};
+  events.forEach(event => {
+    if (event.tag && !colorsByTag[event.tag]) {
+      const index = Object.keys(colorsByTag).length % TAG_COLORS.length;
+      colorsByTag[event.tag] = TAG_COLORS[index];
+    }
+  });
+  return colorsByTag;
 }
 
 function renderButtonBar({ calendarId, tz, year, month, theme, interactive }) {
@@ -149,9 +189,42 @@ function renderButtonBar({ calendarId, tz, year, month, theme, interactive }) {
   `;
 }
 
+function renderLegend(colorsByTag) {
+  const tags = Object.keys(colorsByTag);
+  if (!tags.length) {
+    return '';
+  }
+  return `
+    <div class="legend">
+      ${tags.map(tag => `
+        <span class="legend-item">
+          <span class="legend-swatch" style="background: ${colorsByTag[tag]};"></span>${escapeHtml(tag)}
+        </span>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderEvent(event, tz, colorsByTag) {
+  const color = event.tag ? colorsByTag[event.tag] : null;
+  const style = color ? ` style="color: ${color}; border-left: 2px solid ${color};"` : '';
+  const timePrefix = event.isAllDay ? '' : `${getTimeInTz(event.start, tz)} — `;
+  const locationHtml = event.location ? `<div class="event-detail">${escapeHtml(event.location)}</div>` : '';
+  const descriptionHtml = event.description ? `<div class="event-detail">${escapeHtml(event.description)}</div>` : '';
+
+  return `
+    <div class="event"${style}>
+      <div class="event-title">${timePrefix}${escapeHtml(event.title)}</div>
+      ${locationHtml}
+      ${descriptionHtml}
+    </div>
+  `;
+}
+
 function renderCalendar({ calendarId, tz, year, month, theme, interactive, events }) {
   const backgroundColor = theme === 'light' ? '#FFFFFF' : '#36393F';
   const textColor = theme === 'light' ? '#000000' : '#FFFFFF';
+  const colorsByTag = assignTagColors(events);
 
   const eventsByDay = {};
   events.forEach(event => {
@@ -164,46 +237,36 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, event
 
   const totalDays = daysInMonth(year, month);
   const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const totalCells = firstWeekday + totalDays;
+  const numWeeks = Math.ceil(totalCells / 7);
 
   const cells = [];
   for (let i = 0; i < firstWeekday; i++) {
-    cells.push('<td class="day-cell"></td>');
+    cells.push('<div class="day-cell"></div>');
   }
   for (let day = 1; day <= totalDays; day++) {
     const dayKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayEvents = (eventsByDay[dayKey] || []).sort((a, b) => a.start - b.start);
-    const eventsHtml = dayEvents.map(event => `
-      <div class="event">${event.isAllDay ? '' : `${getTimeInTz(event.start, tz)} `}${event.summary}</div>
-    `).join('');
+    const eventsHtml = dayEvents.map(event => renderEvent(event, tz, colorsByTag)).join('');
     cells.push(`
-      <td class="day-cell">
+      <div class="day-cell">
         <div class="day-number">${day}</div>
         ${eventsHtml}
-      </td>
+      </div>
     `);
   }
-  while (cells.length % 7 !== 0) {
-    cells.push('<td class="day-cell"></td>');
-  }
-
-  const rows = [];
-  for (let i = 0; i < cells.length; i += 7) {
-    rows.push(`<tr>${cells.slice(i, i + 7).join('')}</tr>`);
+  while (cells.length < numWeeks * 7) {
+    cells.push('<div class="day-cell"></div>');
   }
 
   document.getElementById('content').innerHTML = `
-    <div style="background: ${backgroundColor}; color: ${textColor}; min-height: 100vh; font-weight: 500;">
+    <div class="calendar-page" style="background: ${backgroundColor}; color: ${textColor};">
       ${renderButtonBar({ calendarId, tz, year, month, theme, interactive })}
-      <div class="container-fluid py-2">
-        <h4 class="text-center">${MONTH_NAMES[month - 1]} ${year}</h4>
-        <table class="table-fixed" style="width: 100%; border-collapse: collapse;">
-          <thead>
-            <tr>${DAY_NAMES.map(name => `<th class="day-cell">${name}</th>`).join('')}</tr>
-          </thead>
-          <tbody>
-            ${rows.join('')}
-          </tbody>
-        </table>
+      <h4 class="text-center month-title">${MONTH_NAMES[month - 1]} ${year}</h4>
+      ${renderLegend(colorsByTag)}
+      <div class="calendar-grid" style="grid-template-rows: auto repeat(${numWeeks}, 1fr);">
+        ${DAY_NAMES.map(name => `<div class="day-header">${name}</div>`).join('')}
+        ${cells.join('')}
       </div>
     </div>
   `;
@@ -212,7 +275,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, event
 function renderError(message) {
   document.getElementById('content').innerHTML = `
     <div style="background: #36393F; color: #FFFFFF; min-height: 100vh; padding: 16px;">
-      ${message}
+      ${escapeHtml(message)}
     </div>
   `;
 }

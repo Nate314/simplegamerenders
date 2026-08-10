@@ -44,6 +44,24 @@ When present, a button bar renders above the grid:
 
 No client-side re-render logic is needed — every param-driven state change in this repo is already a fresh page load, and c3po only needs a final static page to screenshot.
 
+## Event Detail Rendering
+
+Each event line in a day cell shows `time — summary`, followed by the event's `location` and `description` on their own lines beneath it, when present in the iCal data. No click/popup interaction — everything renders inline, since the page is primarily consumed as a static screenshot rather than a live interactive page.
+
+## Bracketed-Tag Coloring
+
+Event summaries matching `^\[([^\]]+)\]` (e.g. `[Not a Driftwood Event] Pizza Ranch`) are treated as tagged:
+- The bracketed tag (e.g. `Not a Driftwood Event`) is stripped from the displayed title.
+- Each distinct tag found among the rendered month's events is assigned a color from a small fixed palette, cycling if there are more distinct tags than palette colors. This is generic — not hardcoded to any specific tag string.
+- The assigned color is applied to that event's text/left-border in the grid.
+- A small legend renders below the month header, listing each distinct tag next to its color swatch, so the coloring is decodable from a screenshot alone.
+- Events without a bracketed prefix use the existing default event color.
+
+## Equal-Height Grid
+
+- Week rows divide the available viewport height evenly: `height: calc((100vh - header - legend - button bar) / numWeeksInMonth)`, so every row is the same height and the grid fills the screenshot regardless of how many weeks the rendered month has (4–6).
+- Each day cell has `overflow-y: auto`: if a day's event list (now including location/description) exceeds the cell's fixed height, that cell scrolls internally rather than clipping content or growing the row and breaking the equal-height layout.
+
 ## Error Handling
 
 If the calendar is not public, the iCal fetch fails, or `calendarId`/`tz` are missing, render a plain error message into `#content`. No retries, no fallback UI — matches the minimal error-handling style of the existing renderers (e.g. `mcserverstatus`'s `isAllDefined` guard).
