@@ -57,6 +57,13 @@ Event summaries matching `^\[([^\]]+)\]` (e.g. `[Not a Driftwood Event] Pizza Ra
 - A small legend renders below the month header, listing each distinct tag next to its color swatch, so the coloring is decodable from a screenshot alone.
 - Events without a bracketed prefix use the existing default event color.
 
+## Description Visibility
+
+Event descriptions are hidden by default in every mode (locations still always show). In `interactive=true` mode, a checkbox in the button bar ("Show descriptions") toggles them:
+- Backed by a `showDescriptions=true` query param, following the same URL-param + reload pattern as Prev/Next/theme — no client-side re-render logic.
+- Unchecked (param absent) by default; checking it navigates to the same view with `showDescriptions=true` added.
+- Outside `interactive=true`, there's no way to toggle it, so descriptions stay hidden — keeps the default screenshot render compact.
+
 ## Equal-Height Grid
 
 - Week rows divide the available viewport height evenly: `height: calc((100vh - header - legend - button bar) / numWeeksInMonth)`, so every row is the same height and the grid fills the screenshot regardless of how many weeks the rendered month has (4–6).

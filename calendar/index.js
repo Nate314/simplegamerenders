@@ -171,20 +171,25 @@ function assignTagColors(events) {
   return colorsByTag;
 }
 
-function renderButtonBar({ calendarId, tz, year, month, theme, interactive }) {
+function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions }) {
   if (!interactive) {
     return '';
   }
   const prev = formatMonthParam(addMonths({ year, month }, -1));
   const next = formatMonthParam(addMonths({ year, month }, 1));
   const otherTheme = theme === 'dark' ? 'light' : 'dark';
+  const currentMonth = formatMonthParam({ year, month });
   const baseParams = `calendarId=${encodeURIComponent(calendarId)}&tz=${encodeURIComponent(tz)}&interactive=true`;
+  const descriptionsParam = showDescriptions ? '' : '&showDescriptions=true';
 
   return `
     <div class="btn-bar">
-      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${prev}&theme=${theme}">&#9664; Prev</a>
-      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${next}&theme=${theme}">Next &#9654;</a>
-      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${formatMonthParam({ year, month })}&theme=${otherTheme}">Toggle ${otherTheme === 'dark' ? '🌙' : '☀️'}</a>
+      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${prev}&theme=${theme}${showDescriptions ? '&showDescriptions=true' : ''}">&#9664; Prev</a>
+      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${next}&theme=${theme}${showDescriptions ? '&showDescriptions=true' : ''}">Next &#9654;</a>
+      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${currentMonth}&theme=${otherTheme}${showDescriptions ? '&showDescriptions=true' : ''}">Toggle ${otherTheme === 'dark' ? '🌙' : '☀️'}</a>
+      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${currentMonth}&theme=${theme}${descriptionsParam}">
+        <input type="checkbox" ${showDescriptions ? 'checked' : ''} disabled /> Show descriptions
+      </a>
     </div>
   `;
 }
@@ -205,12 +210,12 @@ function renderLegend(colorsByTag) {
   `;
 }
 
-function renderEvent(event, tz, colorsByTag) {
+function renderEvent(event, tz, colorsByTag, showDescriptions) {
   const color = event.tag ? colorsByTag[event.tag] : null;
   const style = color ? ` style="color: ${color}; border-left: 2px solid ${color};"` : '';
   const timePrefix = event.isAllDay ? '' : `${getTimeInTz(event.start, tz)} — `;
   const locationHtml = event.location ? `<div class="event-detail">${escapeHtml(event.location)}</div>` : '';
-  const descriptionHtml = event.description ? `<div class="event-detail">${escapeHtml(event.description)}</div>` : '';
+  const descriptionHtml = (showDescriptions && event.description) ? `<div class="event-detail">${escapeHtml(event.description)}</div>` : '';
 
   return `
     <div class="event"${style}>
@@ -221,7 +226,7 @@ function renderEvent(event, tz, colorsByTag) {
   `;
 }
 
-function renderCalendar({ calendarId, tz, year, month, theme, interactive, events }) {
+function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, events }) {
   const backgroundColor = theme === 'light' ? '#FFFFFF' : '#36393F';
   const textColor = theme === 'light' ? '#000000' : '#FFFFFF';
   const colorsByTag = assignTagColors(events);
@@ -247,7 +252,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, event
   for (let day = 1; day <= totalDays; day++) {
     const dayKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayEvents = (eventsByDay[dayKey] || []).sort((a, b) => a.start - b.start);
-    const eventsHtml = dayEvents.map(event => renderEvent(event, tz, colorsByTag)).join('');
+    const eventsHtml = dayEvents.map(event => renderEvent(event, tz, colorsByTag, showDescriptions)).join('');
     cells.push(`
       <div class="day-cell">
         <div class="day-number">${day}</div>
@@ -261,7 +266,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, event
 
   document.getElementById('content').innerHTML = `
     <div class="calendar-page" style="background: ${backgroundColor}; color: ${textColor};">
-      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive })}
+      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions })}
       <h4 class="text-center month-title">${MONTH_NAMES[month - 1]} ${year}</h4>
       ${renderLegend(colorsByTag)}
       <div class="calendar-grid" style="grid-template-rows: auto repeat(${numWeeks}, 1fr);">
@@ -288,6 +293,7 @@ if (!isAllDefined([params.calendarId, params.tz])) {
 } else {
   const theme = params.theme === 'light' ? 'light' : 'dark';
   const interactive = params.interactive === 'true';
+  const showDescriptions = interactive && params.showDescriptions === 'true';
   const { year, month } = getTargetYearMonth(params.month, params.tz);
 
   fetchEventsForMonth(params.calendarId, params.tz, year, month)
@@ -298,6 +304,7 @@ if (!isAllDefined([params.calendarId, params.tz])) {
       month,
       theme,
       interactive,
+      showDescriptions,
       events,
     }))
     .catch(err => {
