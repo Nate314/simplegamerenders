@@ -82,8 +82,8 @@ Locations are shown by default everywhere (unchanged from current behavior). In 
 ## Location Legend
 
 To cut down on repetition when many events share the same venue (common on the driftwood calendar), locations render as a short numbered badge (e.g. `[1]`) appended to the end of the event's title line — not on a separate line — to minimize vertical space per event:
-- Each distinct location string found among the rendered month's events is assigned a number, in order of first appearance.
-- A legend section lists each number next to its full location text.
+- Each distinct location string found among the rendered month's events is assigned a number, ordered by descending frequency (the most-common location gets `[1]`); ties keep first-appearance order for determinism.
+- A legend section lists each number next to its full location text, in that same frequency order.
 - The `hideLocations` checkbox still hides the badge entirely (and its legend), same as it hid full location text before.
 
 ## Event Time Ranges
@@ -95,6 +95,7 @@ Timed (non-all-day) events show a start–end time range (e.g. `9:30 AM – 10:3
 Both legends (tag colors, locations) are labeled and list one item per line rather than wrapping inline:
 - The tag legend is headed "Tags:"; the location legend is headed "Locations:".
 - Each entry (color swatch + tag, or `[n]` + address) renders on its own line beneath the label.
+- Both legends render together in a fixed-width sidebar to the right of the calendar grid (rather than a horizontal strip above it), to save vertical space for the grid itself. The sidebar only renders when there's at least one legend to show (i.e. at least one tagged or located event that month); otherwise the grid uses the full width.
 
 ## Scrollbar Theming
 

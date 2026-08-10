@@ -57,11 +57,25 @@ body {
     padding: 4px 0;
 }
 
-.legend {
+.main-area {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+.legend-sidebar {
     flex-shrink: 0;
+    width: 180px;
+    overflow-y: auto;
+    padding: 4px;
+    border-left: 1px solid #4a4d53;
+    scrollbar-width: thin;
+}
+
+.legend {
     display: flex;
     flex-direction: column;
-    padding: 2px 12px;
+    padding: 2px 8px;
     font-size: 0.75em;
 }
 
@@ -82,6 +96,7 @@ body {
     height: 10px;
     border-radius: 2px;
     margin-right: 4px;
+    flex-shrink: 0;
 }
 
 .calendar-grid {
@@ -89,6 +104,7 @@ body {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     min-height: 0;
+    min-width: 0;
 }
 
 .day-header {
@@ -106,36 +122,36 @@ body {
     scrollbar-width: thin;
 }
 
-.theme-dark .day-cell {
+.theme-dark .day-cell, .theme-dark .legend-sidebar {
     scrollbar-color: #5a5d63 transparent;
 }
 
-.theme-light .day-cell {
+.theme-light .day-cell, .theme-light .legend-sidebar {
     scrollbar-color: #c0c0c0 transparent;
 }
 
-.theme-dark .day-cell::-webkit-scrollbar {
+.theme-dark .day-cell::-webkit-scrollbar, .theme-dark .legend-sidebar::-webkit-scrollbar {
     width: 8px;
 }
 
-.theme-dark .day-cell::-webkit-scrollbar-track {
+.theme-dark .day-cell::-webkit-scrollbar-track, .theme-dark .legend-sidebar::-webkit-scrollbar-track {
     background: transparent;
 }
 
-.theme-dark .day-cell::-webkit-scrollbar-thumb {
+.theme-dark .day-cell::-webkit-scrollbar-thumb, .theme-dark .legend-sidebar::-webkit-scrollbar-thumb {
     background: #5a5d63;
     border-radius: 4px;
 }
 
-.theme-light .day-cell::-webkit-scrollbar {
+.theme-light .day-cell::-webkit-scrollbar, .theme-light .legend-sidebar::-webkit-scrollbar {
     width: 8px;
 }
 
-.theme-light .day-cell::-webkit-scrollbar-track {
+.theme-light .day-cell::-webkit-scrollbar-track, .theme-light .legend-sidebar::-webkit-scrollbar-track {
     background: transparent;
 }
 
-.theme-light .day-cell::-webkit-scrollbar-thumb {
+.theme-light .day-cell::-webkit-scrollbar-thumb, .theme-light .legend-sidebar::-webkit-scrollbar-thumb {
     background: #c0c0c0;
     border-radius: 4px;
 }

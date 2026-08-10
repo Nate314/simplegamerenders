@@ -182,11 +182,25 @@ function assignTagColors(events) {
 }
 
 function assignLocationNumbers(events) {
-  const numbersByLocation = {};
+  const firstSeenOrder = [];
+  const countsByLocation = {};
   events.forEach(event => {
-    if (event.location && !numbersByLocation[event.location]) {
-      numbersByLocation[event.location] = Object.keys(numbersByLocation).length + 1;
+    if (!event.location) {
+      return;
     }
+    if (!countsByLocation[event.location]) {
+      countsByLocation[event.location] = 0;
+      firstSeenOrder.push(event.location);
+    }
+    countsByLocation[event.location] += 1;
+  });
+
+  // Most-frequent locations get the lowest numbers; ties keep first-appearance order.
+  const sortedLocations = firstSeenOrder.slice().sort((a, b) => countsByLocation[b] - countsByLocation[a]);
+
+  const numbersByLocation = {};
+  sortedLocations.forEach((location, index) => {
+    numbersByLocation[location] = index + 1;
   });
   return numbersByLocation;
 }
@@ -317,15 +331,19 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
     cells.push('<div class="day-cell"></div>');
   }
 
+  const legendsHtml = `${renderLegend(colorsByTag)}${renderLocationLegend(numbersByLocation, hideLocations)}`;
+  const sidebarHtml = legendsHtml ? `<div class="legend-sidebar">${legendsHtml}</div>` : '';
+
   document.getElementById('content').innerHTML = `
     <div class="calendar-page theme-${theme}" style="background: ${backgroundColor}; color: ${textColor};">
       ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz) })}
       <h4 class="text-center month-title">${MONTH_NAMES[month - 1]} ${year}</h4>
-      ${renderLegend(colorsByTag)}
-      ${renderLocationLegend(numbersByLocation, hideLocations)}
-      <div class="calendar-grid" style="grid-template-rows: auto repeat(${numWeeks}, 1fr);">
-        ${DAY_NAMES.map(name => `<div class="day-header">${name}</div>`).join('')}
-        ${cells.join('')}
+      <div class="main-area">
+        <div class="calendar-grid" style="grid-template-rows: auto repeat(${numWeeks}, 1fr);">
+          ${DAY_NAMES.map(name => `<div class="day-header">${name}</div>`).join('')}
+          ${cells.join('')}
+        </div>
+        ${sidebarHtml}
       </div>
     </div>
   `;
