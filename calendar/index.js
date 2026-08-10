@@ -32,8 +32,16 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+const CACHE_BUST_WINDOW_MS = 5 * 60 * 1000;
+
 function getIcsUrl(calendarId) {
-  const icalUrl = `https://calendar.google.com/calendar/ical/${encodeURIComponent(calendarId)}/public/basic.ics`;
+  // corsproxy.io caches responses by URL for up to an hour regardless of
+  // Google's own freshness, so a cache-busting param is needed to avoid
+  // serving a stale feed that's missing recently added/edited events.
+  // Bucketed to a 5-minute window rather than a per-request timestamp, so
+  // repeated requests within the window still benefit from proxy caching.
+  const cacheBucket = Math.floor(Date.now() / CACHE_BUST_WINDOW_MS);
+  const icalUrl = `https://calendar.google.com/calendar/ical/${encodeURIComponent(calendarId)}/public/basic.ics?_=${cacheBucket}`;
   return `${CORS_PROXY}${encodeURIComponent(icalUrl)}`;
 }
 
@@ -87,9 +95,9 @@ function splitTag(summary) {
   return { tag: match[1], title: summary.slice(match[0].length) };
 }
 
-function toEventRecord(summary, location, description, start, isAllDay) {
+function toEventRecord(summary, location, description, start, end, isAllDay) {
   const { tag, title } = splitTag(summary);
-  return { tag, title, location, description, start, isAllDay };
+  return { tag, title, location, description, start, end, isAllDay };
 }
 
 function fetchEventsForMonth(calendarId, tz, year, month) {
@@ -137,6 +145,7 @@ function fetchEventsForMonth(calendarId, tz, year, month) {
                 details.item.location,
                 details.item.description,
                 details.startDate.toJSDate(),
+                details.endDate.toJSDate(),
                 details.startDate.isDate,
               ));
             }
@@ -150,6 +159,7 @@ function fetchEventsForMonth(calendarId, tz, year, month) {
               event.location,
               event.description,
               start,
+              event.endDate.toJSDate(),
               event.startDate.isDate,
             ));
           }
@@ -171,7 +181,17 @@ function assignTagColors(events) {
   return colorsByTag;
 }
 
-function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions }) {
+function assignLocationNumbers(events) {
+  const numbersByLocation = {};
+  events.forEach(event => {
+    if (event.location && !numbersByLocation[event.location]) {
+      numbersByLocation[event.location] = Object.keys(numbersByLocation).length + 1;
+    }
+  });
+  return numbersByLocation;
+}
+
+function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth }) {
   if (!interactive) {
     return '';
   }
@@ -179,16 +199,30 @@ function renderButtonBar({ calendarId, tz, year, month, theme, interactive, show
   const next = formatMonthParam(addMonths({ year, month }, 1));
   const otherTheme = theme === 'dark' ? 'light' : 'dark';
   const currentMonth = formatMonthParam({ year, month });
+  const todayMonth = formatMonthParam(todayYearMonth);
   const baseParams = `calendarId=${encodeURIComponent(calendarId)}&tz=${encodeURIComponent(tz)}&interactive=true`;
-  const descriptionsParam = showDescriptions ? '' : '&showDescriptions=true';
+  const isOnCurrentMonth = currentMonth === todayMonth;
+
+  const toggleFlags = showDescriptions || hideLocations
+    ? `${showDescriptions ? '&showDescriptions=true' : ''}${hideLocations ? '&hideLocations=true' : ''}`
+    : '';
+  const buildUrl = (monthValue, themeValue) => `?${baseParams}&month=${monthValue}&theme=${themeValue}${toggleFlags}`;
+
+  const todayButtonHtml = isOnCurrentMonth ? '' : `
+      <a class="btn btn-secondary btn-sm" href="${buildUrl(todayMonth, theme)}">Today</a>
+  `;
 
   return `
     <div class="btn-bar">
-      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${prev}&theme=${theme}${showDescriptions ? '&showDescriptions=true' : ''}">&#9664; Prev</a>
-      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${next}&theme=${theme}${showDescriptions ? '&showDescriptions=true' : ''}">Next &#9654;</a>
-      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${currentMonth}&theme=${otherTheme}${showDescriptions ? '&showDescriptions=true' : ''}">Toggle ${otherTheme === 'dark' ? '🌙' : '☀️'}</a>
-      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${currentMonth}&theme=${theme}${descriptionsParam}">
+      <a class="btn btn-secondary btn-sm" href="${buildUrl(prev, theme)}">&#9664; Prev</a>
+      <a class="btn btn-secondary btn-sm" href="${buildUrl(next, theme)}">Next &#9654;</a>
+      ${todayButtonHtml}
+      <a class="btn btn-secondary btn-sm" href="${buildUrl(currentMonth, otherTheme)}">Toggle ${otherTheme === 'dark' ? '🌙' : '☀️'}</a>
+      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${currentMonth}&theme=${theme}${hideLocations ? '&hideLocations=true' : ''}${showDescriptions ? '' : '&showDescriptions=true'}">
         <input type="checkbox" ${showDescriptions ? 'checked' : ''} disabled /> Show descriptions
+      </a>
+      <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${currentMonth}&theme=${theme}${showDescriptions ? '&showDescriptions=true' : ''}${hideLocations ? '' : '&hideLocations=true'}">
+        <input type="checkbox" ${hideLocations ? 'checked' : ''} disabled /> Hide locations
       </a>
     </div>
   `;
@@ -210,11 +244,26 @@ function renderLegend(colorsByTag) {
   `;
 }
 
-function renderEvent(event, tz, colorsByTag, showDescriptions) {
+function renderLocationLegend(numbersByLocation, hideLocations) {
+  const locations = Object.keys(numbersByLocation);
+  if (hideLocations || !locations.length) {
+    return '';
+  }
+  const sorted = locations.sort((a, b) => numbersByLocation[a] - numbersByLocation[b]);
+  return `
+    <div class="legend">
+      ${sorted.map(location => `
+        <span class="legend-item">[${numbersByLocation[location]}] ${escapeHtml(location)}</span>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions, hideLocations) {
   const color = event.tag ? colorsByTag[event.tag] : null;
   const style = color ? ` style="color: ${color}; border-left: 2px solid ${color};"` : '';
-  const timePrefix = event.isAllDay ? '' : `${getTimeInTz(event.start, tz)} — `;
-  const locationHtml = event.location ? `<div class="event-detail">${escapeHtml(event.location)}</div>` : '';
+  const timePrefix = event.isAllDay ? '' : `${getTimeInTz(event.start, tz)} – ${getTimeInTz(event.end, tz)} — `;
+  const locationHtml = (!hideLocations && event.location) ? `<div class="event-detail">[${numbersByLocation[event.location]}]</div>` : '';
   const descriptionHtml = (showDescriptions && event.description) ? `<div class="event-detail">${escapeHtml(event.description)}</div>` : '';
 
   return `
@@ -226,10 +275,11 @@ function renderEvent(event, tz, colorsByTag, showDescriptions) {
   `;
 }
 
-function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, events }) {
+function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, events }) {
   const backgroundColor = theme === 'light' ? '#FFFFFF' : '#36393F';
   const textColor = theme === 'light' ? '#000000' : '#FFFFFF';
   const colorsByTag = assignTagColors(events);
+  const numbersByLocation = assignLocationNumbers(events);
 
   const eventsByDay = {};
   events.forEach(event => {
@@ -249,12 +299,14 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
   for (let i = 0; i < firstWeekday; i++) {
     cells.push('<div class="day-cell"></div>');
   }
+  const todayKey = interactive ? getDateKeyInTz(new Date(), tz) : null;
   for (let day = 1; day <= totalDays; day++) {
     const dayKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayEvents = (eventsByDay[dayKey] || []).sort((a, b) => a.start - b.start);
-    const eventsHtml = dayEvents.map(event => renderEvent(event, tz, colorsByTag, showDescriptions)).join('');
+    const eventsHtml = dayEvents.map(event => renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions, hideLocations)).join('');
+    const isToday = dayKey === todayKey;
     cells.push(`
-      <div class="day-cell">
+      <div class="day-cell${isToday ? ' day-cell-today' : ''}">
         <div class="day-number">${day}</div>
         ${eventsHtml}
       </div>
@@ -266,9 +318,10 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
 
   document.getElementById('content').innerHTML = `
     <div class="calendar-page" style="background: ${backgroundColor}; color: ${textColor};">
-      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions })}
+      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz) })}
       <h4 class="text-center month-title">${MONTH_NAMES[month - 1]} ${year}</h4>
       ${renderLegend(colorsByTag)}
+      ${renderLocationLegend(numbersByLocation, hideLocations)}
       <div class="calendar-grid" style="grid-template-rows: auto repeat(${numWeeks}, 1fr);">
         ${DAY_NAMES.map(name => `<div class="day-header">${name}</div>`).join('')}
         ${cells.join('')}
@@ -294,6 +347,7 @@ if (!isAllDefined([params.calendarId, params.tz])) {
   const theme = params.theme === 'light' ? 'light' : 'dark';
   const interactive = params.interactive === 'true';
   const showDescriptions = interactive && params.showDescriptions === 'true';
+  const hideLocations = interactive && params.hideLocations === 'true';
   const { year, month } = getTargetYearMonth(params.month, params.tz);
 
   fetchEventsForMonth(params.calendarId, params.tz, year, month)
@@ -305,6 +359,7 @@ if (!isAllDefined([params.calendarId, params.tz])) {
       theme,
       interactive,
       showDescriptions,
+      hideLocations,
       events,
     }))
     .catch(err => {

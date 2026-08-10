@@ -23,7 +23,7 @@ Optional:
 
 ## Data Flow
 
-1. Build the Google iCal export URL: `https://calendar.google.com/calendar/ical/<encodeURIComponent(calendarId)>/public/basic.ics`
+1. Build the Google iCal export URL: `https://calendar.google.com/calendar/ical/<encodeURIComponent(calendarId)>/public/basic.ics?_=<cacheBucket>`, where `cacheBucket = Math.floor(Date.now() / 300000)` (a 5-minute window). The `_=<cacheBucket>` cache-busting param is required: corsproxy.io caches responses by URL for up to an hour (`cache-control: public, max-age=3600`) independent of Google's own freshness, so without it, recently added/edited calendar events can silently fail to appear for up to an hour (confirmed via manual test — a stale `x-cache-status: HIT` response was missing an event added minutes earlier; adding the cache-busting param produced a fresh `MISS` with the event present). Bucketing to 5 minutes (rather than a per-request timestamp) still bounds staleness to at most 5 minutes while letting repeated requests within the same window hit the proxy's cache.
 2. Google's iCal endpoint does not send `Access-Control-Allow-Origin`, so a direct browser `fetch()` is blocked by CORS (confirmed via manual test). Fetch through a CORS passthrough instead: `https://corsproxy.io/?url=<encodeURIComponent(ical URL)>` (confirmed working end-to-end in a real browser — returns 200 with `access-control-allow-origin: *`). Note: a bare `curl` without browser-like headers gets a 403 from corsproxy.io, and `api.allorigins.win` was tried first but proved flaky (intermittent 503/522/408) during testing — stick with corsproxy.io.
 3. Parse the fetched `.ics` text with **ical.js**, loaded via CDN `<script>` tag (matching the existing Bootstrap CDN pattern in `mcserverstatus/index.html`). Use ical.js's recurrence expansion to correctly materialize RRULE-based recurring events.
 4. Filter/expand events to those with an occurrence falling within the target month, converting occurrence times to the requested `tz`.
@@ -57,12 +57,38 @@ Event summaries matching `^\[([^\]]+)\]` (e.g. `[Not a Driftwood Event] Pizza Ra
 - A small legend renders below the month header, listing each distinct tag next to its color swatch, so the coloring is decodable from a screenshot alone.
 - Events without a bracketed prefix use the existing default event color.
 
+## Today Highlight and Navigation
+
+Only in `interactive=true` mode:
+- Today's date cell (computed in the requested `tz`) gets a highlighted border/background, so viewers can see where "now" is at a glance.
+- A "Today" button appears in the button bar whenever the rendered month differs from the current month (in `tz`), navigating back to the current month via the same URL-param + reload pattern as the other buttons. It's omitted when already viewing the current month.
+
+Outside `interactive=true`, there's no highlight and no button — matches the plain/minimal default screenshot render.
+
 ## Description Visibility
 
 Event descriptions are hidden by default in every mode (locations still always show). In `interactive=true` mode, a checkbox in the button bar ("Show descriptions") toggles them:
 - Backed by a `showDescriptions=true` query param, following the same URL-param + reload pattern as Prev/Next/theme — no client-side re-render logic.
 - Unchecked (param absent) by default; checking it navigates to the same view with `showDescriptions=true` added.
 - Outside `interactive=true`, there's no way to toggle it, so descriptions stay hidden — keeps the default screenshot render compact.
+
+## Location Visibility
+
+Locations are shown by default everywhere (unchanged from current behavior). In `interactive=true` mode, a second checkbox in the button bar ("Hide locations") lets viewers hide them for a cleaner view:
+- Backed by a `hideLocations=true` query param, same URL-param + reload pattern as the other controls.
+- Unchecked (param absent) by default — locations show, matching current behavior.
+- Outside `interactive=true`, there's no way to toggle it, so locations always show.
+
+## Location Legend
+
+To cut down on repetition when many events share the same venue (common on the driftwood calendar), locations render as a short numbered badge (e.g. `[1]`) instead of the full address inline:
+- Each distinct location string found among the rendered month's events is assigned a number, in order of first appearance.
+- A legend section (styled like the tag-color legend) lists each number next to its full location text.
+- The `hideLocations` checkbox still hides the badge entirely (and its legend), same as it hid full location text before.
+
+## Event Time Ranges
+
+Timed (non-all-day) events show a start–end time range (e.g. `9:30 AM – 10:30 AM`) instead of just the start time. All-day events still show no time, as before.
 
 ## Equal-Height Grid
 
