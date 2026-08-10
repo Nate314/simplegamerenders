@@ -458,7 +458,7 @@ function renderError(message) {
 }
 
 const params = getParams(location.href);
-console.log('params', params);
+console.log('params', { ...params, locationEmoji: getAllParamValues(location.href, 'locationEmoji') });
 
 if (!isAllDefined([params.calendarId, params.tz])) {
   renderError('Missing required query params: calendarId, tz');
