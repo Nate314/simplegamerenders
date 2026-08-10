@@ -135,7 +135,7 @@ Day cells that overflow (see Equal-Height Grid) get theme-aware scrollbar stylin
 ## Print Styling
 
 A `@media print` block makes printing the page (e.g. via a browser's print dialog) behave predictably regardless of the params used for the on-screen render:
-- `@page { size: landscape; }` requests landscape orientation by default.
+- No forced print orientation: `@page { size: landscape; }` was tried first, but real testing showed Chrome treats the `landscape` orientation *keyword* as authoritative for the page box and overrides the print dialog's orientation picker — selecting "Portrait" in the dialog had no effect, content stayed laid out for landscape. There's no CSS mechanism that both defaults to landscape *and* lets the print dialog's orientation choice genuinely apply, so the rule was removed entirely; orientation is left fully up to the print dialog (whatever the browser/OS defaults to, with both orientations actually working).
 - The button bar (`interactive=true` nav/toggle/checkboxes) is hidden — it's a screen-only interaction affordance, not something meaningful on a printed page.
 - Today's cell highlight is removed — printouts are typically made ahead of time or reused, so "today" at render time isn't necessarily meaningful when the page is actually printed/read.
 - The page always prints in the light color scheme, overriding whichever `theme` was used on screen, via `!important` rules that outrank the inline `background`/`color` styles JS sets on `.calendar-page` (this is standard CSS cascade behavior — an `!important` author-stylesheet rule beats a non-`!important` inline style).
