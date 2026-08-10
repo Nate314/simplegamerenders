@@ -92,6 +92,13 @@ function fetchEventsForMonth(calendarId, tz, year, month) {
       vevents.forEach(vevent => {
         const event = new ICAL.Event(vevent);
 
+        // Recurrence exceptions (overridden instances) are already accounted
+        // for by their master event's iterator via event.getOccurrenceDetails,
+        // so processing them again here would produce duplicates.
+        if (event.isRecurrenceException()) {
+          return;
+        }
+
         if (event.isRecurring()) {
           const iterator = event.iterator();
           let next;
@@ -105,7 +112,7 @@ function fetchEventsForMonth(calendarId, tz, year, month) {
             if (occurrenceStart >= rangeStart) {
               const details = event.getOccurrenceDetails(next);
               events.push({
-                summary: event.summary,
+                summary: details.item.summary,
                 start: details.startDate.toJSDate(),
                 isAllDay: details.startDate.isDate,
               });
