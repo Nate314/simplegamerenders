@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!--
+         __    __    __      __    ______
+        |NN\  |NN|  |MM\    /MM|  /GGGGGG|
+        |NN|\ |NN|  |MM|\  /|MM|  |G| ____
+        |NN| \|NN|  |MM| \/ |MM|  |G|  |GG|
+        |NN|  \NN|  |MM|    |MM|  \GGGGGGG|
+    -->
+    <!-- use to render a month view of a public Google Calendar -->
+    <!-- example: ?calendarId=calendar.driftwood%40gmail.com&tz=America%2FChicago -->
+    <!-- optional: &month=2026-08 (defaults to current month) -->
+    <!-- optional: &theme=dark|light (defaults to dark) -->
+    <!-- optional: &interactive=true (adds month nav + theme toggle buttons) -->
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar Renderer</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ical.js/1.5.0/ical.min.js"></script>
+    <style>
+* {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: sans-serif;
+}
+
+.day-cell {
+    min-height: 100px;
+    vertical-align: top;
+    border: 1px solid #4a4d53;
+    padding: 4px;
+    width: calc(100% / 7);
+}
+
+.day-number {
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.event {
+    font-size: 0.7em;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.btn-bar {
+    padding: 8px;
+}
+    </style>
+</head>
+<body>
+    <div id="content"></div>
+    <script src="index.js"></script>
+</body>
+</html>

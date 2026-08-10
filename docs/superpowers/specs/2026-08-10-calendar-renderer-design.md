@@ -24,7 +24,7 @@ Optional:
 ## Data Flow
 
 1. Build the Google iCal export URL: `https://calendar.google.com/calendar/ical/<encodeURIComponent(calendarId)>/public/basic.ics`
-2. Google's iCal endpoint does not send `Access-Control-Allow-Origin`, so a direct browser `fetch()` is blocked by CORS (confirmed via manual test). Fetch through a CORS passthrough instead: `https://api.allorigins.win/raw?url=<encodeURIComponent(ical URL)>` (confirmed working against the real endpoint — 200 with `access-control-allow-origin: *`). Note: `corsproxy.io` was tested and returned 403 for this endpoint — do not use it.
+2. Google's iCal endpoint does not send `Access-Control-Allow-Origin`, so a direct browser `fetch()` is blocked by CORS (confirmed via manual test). Fetch through a CORS passthrough instead: `https://corsproxy.io/?url=<encodeURIComponent(ical URL)>` (confirmed working end-to-end in a real browser — returns 200 with `access-control-allow-origin: *`). Note: a bare `curl` without browser-like headers gets a 403 from corsproxy.io, and `api.allorigins.win` was tried first but proved flaky (intermittent 503/522/408) during testing — stick with corsproxy.io.
 3. Parse the fetched `.ics` text with **ical.js**, loaded via CDN `<script>` tag (matching the existing Bootstrap CDN pattern in `mcserverstatus/index.html`). Use ical.js's recurrence expansion to correctly materialize RRULE-based recurring events.
 4. Filter/expand events to those with an occurrence falling within the target month, converting occurrence times to the requested `tz`.
 
