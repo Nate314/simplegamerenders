@@ -137,6 +137,58 @@ function daysInMonth(year, month) {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+const MAX_EVENT_SPAN_DAYS = 60;
+
+function enumerateDayKeys(startKey, endKeyInclusive) {
+  const [sy, sm, sd] = startKey.split('-').map(Number);
+  const [ey, em, ed] = endKeyInclusive.split('-').map(Number);
+  const startUTC = Date.UTC(sy, sm - 1, sd);
+  const endUTC = Date.UTC(ey, em - 1, ed);
+  const keys = [];
+  for (let t = startUTC; t <= endUTC && keys.length < MAX_EVENT_SPAN_DAYS; t += 86400000) {
+    const d = new Date(t);
+    keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`);
+  }
+  return keys;
+}
+
+function formatDateKey(year, month, day) {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function dateKeyMinusOneDay(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  const t = Date.UTC(y, m - 1, d) - 86400000;
+  const dt = new Date(t);
+  return formatDateKey(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
+}
+
+function icalTimeToAllDayKeyRange(startTime, endTime) {
+  const startKey = formatDateKey(startTime.year, startTime.month, startTime.day);
+  const endKeyExclusive = formatDateKey(endTime.year, endTime.month, endTime.day);
+  return { startKey, endKeyInclusive: dateKeyMinusOneDay(endKeyExclusive) };
+}
+
+function getEventDayKeys(event, tz) {
+  // All-day events are floating calendar dates with no time/timezone
+  // component (iCal VALUE=DATE / Google's start.date-end.date). Routing them
+  // through timezone conversion (as timed events need) can shift them onto
+  // the wrong calendar day depending on the rendering environment's local
+  // timezone vs. the requested tz -- so all-day events use the exact
+  // calendar-date range precomputed at parse time (event.allDayKeyRange)
+  // instead of deriving keys from the Date-instant start/end fields.
+  if (event.isAllDay && event.allDayKeyRange) {
+    const { startKey, endKeyInclusive } = event.allDayKeyRange;
+    return endKeyInclusive <= startKey ? [startKey] : enumerateDayKeys(startKey, endKeyInclusive);
+  }
+  const startKey = getDateKeyInTz(event.start, tz);
+  const endKey = getDateKeyInTz(event.end, tz);
+  if (endKey <= startKey) {
+    return [startKey];
+  }
+  return enumerateDayKeys(startKey, endKey);
+}
+
 function splitTag(summary) {
   const match = TAG_PATTERN.exec(summary || '');
   if (!match) {
@@ -145,9 +197,9 @@ function splitTag(summary) {
   return { tag: match[1], title: summary.slice(match[0].length) };
 }
 
-function toEventRecord(summary, location, description, start, end, isAllDay) {
+function toEventRecord(summary, location, description, start, end, isAllDay, allDayKeyRange) {
   const { tag, title } = splitTag(summary);
-  return { tag, title, location, description, start, end, isAllDay };
+  return { tag, title, location, description, start, end, isAllDay, allDayKeyRange: allDayKeyRange || null };
 }
 
 function fetchEventsFromIcs(calendarId, tz, year, month) {
@@ -163,7 +215,6 @@ function fetchEventsFromIcs(calendarId, tz, year, month) {
       const comp = new ICAL.Component(jcalData);
       const vevents = comp.getAllSubcomponents('vevent');
 
-      const monthKeyPrefix = `${year}-${String(month).padStart(2, '0')}`;
       const rangeStart = new Date(Date.UTC(year, month - 1, 1));
       const rangeEnd = new Date(Date.UTC(year, month, 1));
       const events = [];
@@ -185,32 +236,43 @@ function fetchEventsFromIcs(calendarId, tz, year, month) {
           while ((next = iterator.next()) && count < 2000) {
             count += 1;
             const occurrenceStart = next.toJSDate();
+            // Break once an occurrence starts at/after the range -- occurrences
+            // are produced in order, and a multi-day occurrence starting before
+            // rangeEnd can still overlap the range even if it started earlier,
+            // which the end-based check below (not this break) accounts for.
             if (occurrenceStart >= rangeEnd) {
               break;
             }
-            if (occurrenceStart >= rangeStart) {
-              const details = event.getOccurrenceDetails(next);
+            const details = event.getOccurrenceDetails(next);
+            const occurrenceEnd = details.endDate.toJSDate();
+            // Interval overlap, not just "starts within the month" -- a
+            // multi-day occurrence starting in a prior month but continuing
+            // into this one still needs to render on its overlapping days.
+            if (occurrenceEnd > rangeStart) {
               events.push(toEventRecord(
                 details.item.summary,
                 details.item.location,
                 details.item.description,
                 details.startDate.toJSDate(),
-                details.endDate.toJSDate(),
+                occurrenceEnd,
                 details.startDate.isDate,
+                details.startDate.isDate ? icalTimeToAllDayKeyRange(details.startDate, details.endDate) : null,
               ));
             }
           }
         } else {
           const start = event.startDate.toJSDate();
-          const dayKey = getDateKeyInTz(start, tz);
-          if (dayKey.startsWith(monthKeyPrefix)) {
+          const end = event.endDate.toJSDate();
+          // Interval overlap, not just "starts within the month" -- see above.
+          if (start < rangeEnd && end > rangeStart) {
             events.push(toEventRecord(
               event.summary,
               event.location,
               event.description,
               start,
-              event.endDate.toJSDate(),
+              end,
               event.startDate.isDate,
+              event.startDate.isDate ? icalTimeToAllDayKeyRange(event.startDate, event.endDate) : null,
             ));
           }
         }
@@ -241,7 +303,10 @@ function fetchEventsFromApi(calendarId, apiKey, year, month) {
       const isAllDay = !!item.start.date;
       const start = new Date(isAllDay ? item.start.date : item.start.dateTime);
       const end = new Date(isAllDay ? item.end.date : item.end.dateTime);
-      return toEventRecord(item.summary, item.location, item.description, start, end, isAllDay);
+      const allDayKeyRange = isAllDay
+        ? { startKey: item.start.date, endKeyInclusive: dateKeyMinusOneDay(item.end.date) }
+        : null;
+      return toEventRecord(item.summary, item.location, item.description, start, end, isAllDay, allDayKeyRange);
     }));
 }
 
@@ -442,7 +507,9 @@ function renderEvent(event, tz, stylesByTag, numbersByLocation, showDescriptions
   const showLocation = !hideLocations && event.location;
   const emojiPrefix = showLocation ? getLocationEmoji(event.location, locationEmojiMappings) : '';
   const emojiSpacer = emojiPrefix ? ' ' : '';
-  const timePrefix = event.isAllDay ? '' : `${getTimeInTz(event.start, tz)} – ${getTimeInTz(event.end, tz)} — `;
+  const timePrefix = event.isContinuation
+    ? '→ '
+    : (event.isAllDay ? '' : `${getTimeInTz(event.start, tz)} – ${getTimeInTz(event.end, tz)} — `);
   const locationSuffix = showLocation ? ` [${numbersByLocation[event.location]}]` : '';
   const descriptionHtml = (showDescriptions && event.description) ? `<div class="event-detail">${escapeHtml(event.description)}</div>` : '';
 
@@ -462,11 +529,12 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
 
   const eventsByDay = {};
   events.forEach(event => {
-    const dayKey = getDateKeyInTz(event.start, tz);
-    if (!eventsByDay[dayKey]) {
-      eventsByDay[dayKey] = [];
-    }
-    eventsByDay[dayKey].push(event);
+    getEventDayKeys(event, tz).forEach((dayKey, index) => {
+      if (!eventsByDay[dayKey]) {
+        eventsByDay[dayKey] = [];
+      }
+      eventsByDay[dayKey].push(index === 0 ? event : { ...event, isContinuation: true });
+    });
   });
 
   const totalDays = daysInMonth(year, month);
