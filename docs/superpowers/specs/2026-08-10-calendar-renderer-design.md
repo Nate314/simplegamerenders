@@ -56,7 +56,7 @@ There are two ways to fetch calendar data, selected by whether `apiKey` is prese
 When absent (default), no buttons are rendered — just the calendar grid, matching the minimal-render behavior of the other pages (important for one-shot Discord screenshots).
 
 When present, a button bar renders above the grid:
-- **◀ / ▶** — plain `<a>` links that rewrite the `month` query param to the previous/next month and reload the page
+- **◀ / ▶** — plain `<a>` links that rewrite the `month` query param to the previous/next month and reload the page. Labeled with the target month/year (e.g. "◀ July 2026", "September 2026 ▶") rather than generic "Prev"/"Next" text, so it's clear which month each button goes to without needing to already know the current one.
 - **Theme toggle** — a plain `<a>` link that rewrites the `theme` query param (`dark` ⇄ `light`) and reloads the page
 
 No client-side re-render logic is needed — every param-driven state change in this repo is already a fresh page load, and c3po only needs a final static page to screenshot.
@@ -154,6 +154,16 @@ Since a static rule is unreliable in both directions, `interactive=true` mode in
 - Removes the injected style on the `afterprint` event, so the override doesn't leak into a later plain Ctrl+P / browser-menu print (which still has no forced orientation, and is expected to have the same unreliable-default behavior described above — that's an accepted gap for the un-buttoned path).
 
 This is the one place in the renderer where a button triggers actual JS behavior (`window.print()`) rather than a URL-param + reload — printing fundamentally can't be represented as a URL param, so the link-based navigation pattern used everywhere else doesn't apply here.
+
+## Multi-Day Events
+
+An event whose start and end fall on different calendar days (in the requested `tz`) renders on every day it spans, not just its start day:
+- `getEventDayKeys(event, tz)` enumerates the calendar-date keys from the event's start day through its (inclusive) end day, capped at 60 days as a defensive bound against malformed/pathological data.
+- **Timed events** derive their day keys from `getDateKeyInTz` on the start/end `Date` instants, same as before.
+- **All-day events use a separately precomputed exact calendar-date range (`event.allDayKeyRange`) instead of deriving keys from their `Date` instants.** This fixes a real bug found while implementing this feature: all-day events are floating calendar dates with no time/timezone component (iCal `VALUE=DATE`, Google's `start.date`/`end.date`), but the `Date` objects built from them are *not* timezone-neutral — `ical.js`'s `ICAL.Time#toJSDate()` for a date-only value constructs the `Date` at midnight in the **browser/runtime's local system timezone** (not the requested `tz` param, not UTC), while the Calendar API path parses `"YYYY-MM-DD"` strings as UTC midnight per the ECMAScript date-string spec — two different, both-wrong-for-this-purpose conventions. Running either through `getDateKeyInTz(date, tz)` re-interprets that already-ambiguous instant in the *target* `tz`, which can shift the event onto the wrong calendar day whenever the runtime's system timezone (or UTC, for the API path) differs from the requested `tz` — confirmed by testing: a synthetic Aug 10–12 all-day event rendered as Aug 9–12 in this environment. The fix extracts the literal `year`/`month`/`day` fields directly from `ICAL.Time` (iCal path) or the raw `"YYYY-MM-DD"` string (API path) at parse time, with iCal's exclusive end-date convention corrected via pure calendar-date arithmetic (`dateKeyMinusOneDay`, implemented with `Date.UTC` used only as a closed-system day calculator — constructed and read back in UTC only, never touching the ambiguous local/target-tz conversion) rather than via `Date` objects with any implicit timezone attached.
+- The event object is duplicated into each spanned day's event list, with every day after the first flagged `isContinuation: true`.
+- A continuation-day line shows `→ Title` instead of the normal time-range prefix, so it reads as "this event, still going" rather than a second full-detail entry; location badge, tag color/style, and description (if `showDescriptions`) still render normally on continuation days.
+- **Data-source fix required for this to work correctly**: the iCal fetch path (`fetchEventsFromIcs`) previously filtered events by whether their *start* fell within the rendered month (`dayKey.startsWith(monthKeyPrefix)` for non-recurring events, `occurrenceStart >= rangeStart` for recurring ones). That meant a multi-day event starting in the *previous* month but continuing into the rendered one was silently excluded entirely. Both branches now use interval-overlap filtering (`start < rangeEnd && end > rangeStart`) instead of start-only membership. The Google Calendar API path (`fetchEventsFromApi`) already handled this correctly — `events.list` with `timeMin`/`timeMax` returns events that *overlap* the given range, not just ones starting within it — so no change was needed there.
 
 ## Equal-Height Grid
 
