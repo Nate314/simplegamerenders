@@ -135,11 +135,25 @@ Day cells that overflow (see Equal-Height Grid) get theme-aware scrollbar stylin
 ## Print Styling
 
 A `@media print` block makes printing the page (e.g. via a browser's print dialog) behave predictably regardless of the params used for the on-screen render:
-- No forced print orientation: `@page { size: landscape; }` was tried first, but real testing showed Chrome treats the `landscape` orientation *keyword* as authoritative for the page box and overrides the print dialog's orientation picker — selecting "Portrait" in the dialog had no effect, content stayed laid out for landscape. There's no CSS mechanism that both defaults to landscape *and* lets the print dialog's orientation choice genuinely apply, so the rule was removed entirely; orientation is left fully up to the print dialog (whatever the browser/OS defaults to, with both orientations actually working).
+- No static, always-on `@page` orientation rule — see Print Orientation Buttons below for why and what replaced it.
 - The button bar (`interactive=true` nav/toggle/checkboxes) is hidden — it's a screen-only interaction affordance, not something meaningful on a printed page.
 - Today's cell highlight is removed — printouts are typically made ahead of time or reused, so "today" at render time isn't necessarily meaningful when the page is actually printed/read.
 - The page always prints in the light color scheme, overriding whichever `theme` was used on screen, via `!important` rules that outrank the inline `background`/`color` styles JS sets on `.calendar-page` (this is standard CSS cascade behavior — an `!important` author-stylesheet rule beats a non-`!important` inline style).
 - The Equal-Height Grid's fixed-viewport-height/`overflow: hidden`/`overflow-y: auto` layout — which exists specifically for the on-screen screenshot use case — is overridden for print: `.calendar-page` gets `height: auto; overflow: visible`, and `.day-cell`/`.legend-sidebar` get `overflow: visible`, so nothing is clipped and no scrollbars render. With the container's height no longer fixed, CSS Grid's `1fr` row tracks resolve based on content size rather than being forced into equal shares of a fixed height (a spec-defined behavior: `fr` tracks act like `auto` when the grid container's size in that axis is indefinite), so each week's row naturally grows to fit its content. `page-break-inside: avoid` (plus the modern `break-inside: avoid`) on day cells keeps a single day's content from splitting across a page break; a month with enough events can still span multiple printed pages, which is expected/acceptable — the point is that content is never silently lost, only paginated.
+
+## Print Orientation Buttons
+
+Getting print orientation right went through two failed attempts before landing here, both confirmed by real testing (not just spec-reading), because print-dialog/`@page` interaction turns out to be inconsistent across the two states that matter:
+
+1. **`@page { size: landscape; }` always on** — assumed to be just a default suggestion per the CSS Paged Media spec. In practice, Chrome treated the `landscape` keyword as authoritative for the page box and overrode the print dialog's orientation picker entirely: selecting "Portrait" in the dialog had no effect.
+2. **No `@page` rule at all** — orientation left fully to the print dialog. In practice, this got stuck defaulting to portrait, with no reliable way to get landscape from the dialog either.
+
+Since a static rule is unreliable in both directions, `interactive=true` mode instead renders two buttons — **🖨️ Print Landscape** and **🖨️ Print Portrait** — that call `printWithOrientation(orientation)`:
+- Injects a `<style media="print">` with `@page { size: <orientation>; }` into `<head>` right before printing.
+- Calls `window.print()`.
+- Removes the injected style on the `afterprint` event, so the override doesn't leak into a later plain Ctrl+P / browser-menu print (which still has no forced orientation, and is expected to have the same unreliable-default behavior described above — that's an accepted gap for the un-buttoned path).
+
+This is the one place in the renderer where a button triggers actual JS behavior (`window.print()`) rather than a URL-param + reload — printing fundamentally can't be represented as a URL param, so the link-based navigation pattern used everywhere else doesn't apply here.
 
 ## Equal-Height Grid
 

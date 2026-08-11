@@ -345,6 +345,25 @@ function assignLocationNumbers(events) {
   return { numbersByLocation, displayTextByNumber };
 }
 
+function printWithOrientation(orientation) {
+  // Letting the print dialog's own orientation picker decide proved
+  // unreliable (a forced @page rule was found to override the dialog
+  // entirely, and removing it left orientation stuck on whatever the
+  // browser/OS defaulted to). Forcing the desired orientation right
+  // before printing, then removing the override once printing is done,
+  // gives deterministic results regardless of dialog behavior.
+  const style = document.createElement('style');
+  style.media = 'print';
+  style.textContent = `@page { size: ${orientation}; }`;
+  document.head.appendChild(style);
+  window.addEventListener('afterprint', function cleanup() {
+    style.remove();
+    window.removeEventListener('afterprint', cleanup);
+  });
+  window.print();
+}
+window.printWithOrientation = printWithOrientation;
+
 function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth, rawLocationEmojiParams, apiKey }) {
   if (!interactive) {
     return '';
@@ -379,6 +398,8 @@ function renderButtonBar({ calendarId, tz, year, month, theme, interactive, show
       <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${currentMonth}&theme=${theme}${showDescriptions ? '&showDescriptions=true' : ''}${hideLocations ? '' : '&hideLocations=true'}">
         <input type="checkbox" ${hideLocations ? 'checked' : ''} disabled /> Hide locations
       </a>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="printWithOrientation('landscape')">🖨️ Print Landscape</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="printWithOrientation('portrait')">🖨️ Print Portrait</button>
     </div>
   `;
 }
