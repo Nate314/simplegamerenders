@@ -56,7 +56,7 @@ There are two ways to fetch calendar data, selected by whether `apiKey` is prese
 When absent (default), no buttons are rendered — just the calendar grid, matching the minimal-render behavior of the other pages (important for one-shot Discord screenshots).
 
 When present, a button bar renders above the grid:
-- **◀ / ▶** — plain `<a>` links that rewrite the `month` query param to the previous/next month and reload the page
+- **◀ / ▶** — plain `<a>` links that rewrite the `month` query param to the previous/next month and reload the page. Labeled with the target month/year (e.g. "◀ July 2026", "September 2026 ▶") rather than generic "Prev"/"Next" text, so it's clear which month each button goes to without needing to already know the current one.
 - **Theme toggle** — a plain `<a>` link that rewrites the `theme` query param (`dark` ⇄ `light`) and reloads the page
 
 No client-side re-render logic is needed — every param-driven state change in this repo is already a fresh page load, and c3po only needs a final static page to screenshot.

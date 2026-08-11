@@ -433,8 +433,12 @@ function renderButtonBar({ calendarId, tz, year, month, theme, interactive, show
   if (!interactive) {
     return '';
   }
-  const prev = formatMonthParam(addMonths({ year, month }, -1));
-  const next = formatMonthParam(addMonths({ year, month }, 1));
+  const prevYearMonth = addMonths({ year, month }, -1);
+  const nextYearMonth = addMonths({ year, month }, 1);
+  const prev = formatMonthParam(prevYearMonth);
+  const next = formatMonthParam(nextYearMonth);
+  const prevLabel = `${MONTH_NAMES[prevYearMonth.month - 1]} ${prevYearMonth.year}`;
+  const nextLabel = `${MONTH_NAMES[nextYearMonth.month - 1]} ${nextYearMonth.year}`;
   const otherTheme = theme === 'dark' ? 'light' : 'dark';
   const currentMonth = formatMonthParam({ year, month });
   const todayMonth = formatMonthParam(todayYearMonth);
@@ -453,8 +457,8 @@ function renderButtonBar({ calendarId, tz, year, month, theme, interactive, show
 
   return `
     <div class="btn-bar">
-      <a class="btn btn-secondary btn-sm" href="${buildUrl(prev, theme)}">&#9664; Prev</a>
-      <a class="btn btn-secondary btn-sm" href="${buildUrl(next, theme)}">Next &#9654;</a>
+      <a class="btn btn-secondary btn-sm" href="${buildUrl(prev, theme)}">&#9664; ${escapeHtml(prevLabel)}</a>
+      <a class="btn btn-secondary btn-sm" href="${buildUrl(next, theme)}">${escapeHtml(nextLabel)} &#9654;</a>
       ${todayButtonHtml}
       <a class="btn btn-secondary btn-sm" href="${buildUrl(currentMonth, otherTheme)}">Toggle ${otherTheme === 'dark' ? '🌙' : '☀️'}</a>
       <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${currentMonth}&theme=${theme}${hideLocations ? '&hideLocations=true' : ''}${showDescriptions ? '' : '&showDescriptions=true'}">
