@@ -5,6 +5,9 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 const TAG_COLORS = ['#e67e22', '#9b59b6', '#1abc9c', '#e74c3c', '#3498db', '#f1c40f', '#2ecc71', '#95a5a6'];
+// Paired with TAG_COLORS by index so tags stay distinguishable by shape, not
+// just color -- color alone disappears when printing in black and white.
+const TAG_BORDER_STYLES = ['solid', 'dotted', 'double', 'dashed'];
 const TAG_PATTERN = /^\[([^\]]+)\]\s*/;
 
 function getParams(url) {
@@ -253,15 +256,18 @@ function fetchEventsForMonth(calendarId, tz, year, month, apiKey) {
   return fetchEventsFromIcs(calendarId, tz, year, month);
 }
 
-function assignTagColors(events) {
-  const colorsByTag = {};
+function assignTagStyles(events) {
+  const stylesByTag = {};
   events.forEach(event => {
-    if (event.tag && !colorsByTag[event.tag]) {
-      const index = Object.keys(colorsByTag).length % TAG_COLORS.length;
-      colorsByTag[event.tag] = TAG_COLORS[index];
+    if (event.tag && !stylesByTag[event.tag]) {
+      const index = Object.keys(stylesByTag).length;
+      stylesByTag[event.tag] = {
+        color: TAG_COLORS[index % TAG_COLORS.length],
+        borderStyle: TAG_BORDER_STYLES[index % TAG_BORDER_STYLES.length],
+      };
     }
   });
-  return colorsByTag;
+  return stylesByTag;
 }
 
 // Small equivalence table for common address abbreviations, so e.g.
@@ -339,6 +345,25 @@ function assignLocationNumbers(events) {
   return { numbersByLocation, displayTextByNumber };
 }
 
+function printWithOrientation(orientation) {
+  // Letting the print dialog's own orientation picker decide proved
+  // unreliable (a forced @page rule was found to override the dialog
+  // entirely, and removing it left orientation stuck on whatever the
+  // browser/OS defaulted to). Forcing the desired orientation right
+  // before printing, then removing the override once printing is done,
+  // gives deterministic results regardless of dialog behavior.
+  const style = document.createElement('style');
+  style.media = 'print';
+  style.textContent = `@page { size: ${orientation}; }`;
+  document.head.appendChild(style);
+  window.addEventListener('afterprint', function cleanup() {
+    style.remove();
+    window.removeEventListener('afterprint', cleanup);
+  });
+  window.print();
+}
+window.printWithOrientation = printWithOrientation;
+
 function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth, rawLocationEmojiParams, apiKey }) {
   if (!interactive) {
     return '';
@@ -373,12 +398,14 @@ function renderButtonBar({ calendarId, tz, year, month, theme, interactive, show
       <a class="btn btn-secondary btn-sm" href="?${baseParams}&month=${currentMonth}&theme=${theme}${showDescriptions ? '&showDescriptions=true' : ''}${hideLocations ? '' : '&hideLocations=true'}">
         <input type="checkbox" ${hideLocations ? 'checked' : ''} disabled /> Hide locations
       </a>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="printWithOrientation('landscape')">🖨️ Print Landscape</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="printWithOrientation('portrait')">🖨️ Print Portrait</button>
     </div>
   `;
 }
 
-function renderLegend(colorsByTag) {
-  const tags = Object.keys(colorsByTag);
+function renderLegend(stylesByTag) {
+  const tags = Object.keys(stylesByTag);
   if (!tags.length) {
     return '';
   }
@@ -387,7 +414,7 @@ function renderLegend(colorsByTag) {
       <div class="legend-label">Tags:</div>
       ${tags.map(tag => `
         <div class="legend-item">
-          <span class="legend-swatch" style="background: ${colorsByTag[tag]};"></span>${escapeHtml(tag)}
+          <span class="legend-swatch" style="border-left: 4px ${stylesByTag[tag].borderStyle} ${stylesByTag[tag].color};"></span>${escapeHtml(tag)}
         </div>
       `).join('')}
     </div>
@@ -409,9 +436,9 @@ function renderLocationLegend(displayTextByNumber, hideLocations, locationEmojiM
   `;
 }
 
-function renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions, hideLocations, locationEmojiMappings) {
-  const color = event.tag ? colorsByTag[event.tag] : null;
-  const style = color ? ` style="color: ${color}; border-left: 2px solid ${color};"` : '';
+function renderEvent(event, tz, stylesByTag, numbersByLocation, showDescriptions, hideLocations, locationEmojiMappings) {
+  const tagStyle = event.tag ? stylesByTag[event.tag] : null;
+  const style = tagStyle ? ` style="color: ${tagStyle.color}; border-left: 3px ${tagStyle.borderStyle} ${tagStyle.color};"` : '';
   const showLocation = !hideLocations && event.location;
   const emojiPrefix = showLocation ? getLocationEmoji(event.location, locationEmojiMappings) : '';
   const emojiSpacer = emojiPrefix ? ' ' : '';
@@ -430,7 +457,7 @@ function renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions
 function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, locationEmojiMappings, apiKey, events }) {
   const backgroundColor = theme === 'light' ? '#FFFFFF' : '#36393F';
   const textColor = theme === 'light' ? '#000000' : '#FFFFFF';
-  const colorsByTag = assignTagColors(events);
+  const stylesByTag = assignTagStyles(events);
   const { numbersByLocation, displayTextByNumber } = assignLocationNumbers(events);
 
   const eventsByDay = {};
@@ -455,7 +482,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
   for (let day = 1; day <= totalDays; day++) {
     const dayKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayEvents = (eventsByDay[dayKey] || []).sort((a, b) => a.start - b.start);
-    const eventsHtml = dayEvents.map(event => renderEvent(event, tz, colorsByTag, numbersByLocation, showDescriptions, hideLocations, locationEmojiMappings)).join('');
+    const eventsHtml = dayEvents.map(event => renderEvent(event, tz, stylesByTag, numbersByLocation, showDescriptions, hideLocations, locationEmojiMappings)).join('');
     const isToday = dayKey === todayKey;
     cells.push(`
       <div class="day-cell${isToday ? ' day-cell-today' : ''}">
@@ -468,7 +495,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
     cells.push('<div class="day-cell"></div>');
   }
 
-  const legendsHtml = `${renderLegend(colorsByTag)}${renderLocationLegend(displayTextByNumber, hideLocations, locationEmojiMappings)}`;
+  const legendsHtml = `${renderLegend(stylesByTag)}${renderLocationLegend(displayTextByNumber, hideLocations, locationEmojiMappings)}`;
   const sidebarHtml = legendsHtml ? `<div class="legend-sidebar">${legendsHtml}</div>` : '';
 
   document.getElementById('content').innerHTML = `

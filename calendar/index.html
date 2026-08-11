@@ -99,9 +99,9 @@ body {
 
 .legend-swatch {
     display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
+    width: 14px;
+    height: 12px;
+    background: transparent;
     margin-right: 4px;
     flex-shrink: 0;
 }
@@ -188,10 +188,6 @@ body {
 }
 
 @media print {
-    @page {
-        size: landscape;
-    }
-
     .btn-bar {
         display: none !important;
     }
@@ -204,6 +200,18 @@ body {
     .calendar-page {
         background: #FFFFFF !important;
         color: #000000 !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    .main-area {
+        overflow: visible !important;
+    }
+
+    .day-cell, .legend-sidebar {
+        overflow: visible !important;
+        page-break-inside: avoid;
+        break-inside: avoid;
     }
 }
     </style>

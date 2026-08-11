@@ -69,9 +69,9 @@ Each event line in a day cell shows `time — summary`, followed by the event's 
 
 Event summaries matching `^\[([^\]]+)\]` (e.g. `[Not a Driftwood Event] Pizza Ranch`) are treated as tagged:
 - The bracketed tag (e.g. `Not a Driftwood Event`) is stripped from the displayed title.
-- Each distinct tag found among the rendered month's events is assigned a color from a small fixed palette, cycling if there are more distinct tags than palette colors. This is generic — not hardcoded to any specific tag string.
-- The assigned color is applied to that event's text/left-border in the grid.
-- A small legend renders below the month header, listing each distinct tag next to its color swatch, so the coloring is decodable from a screenshot alone.
+- Each distinct tag found among the rendered month's events is assigned a color from a small fixed palette (cycling if there are more distinct tags than palette colors) *and* a left-border style (`solid`/`dashed`/`dotted`/`double`, also cycling, independently of the color palette's length). This is generic — not hardcoded to any specific tag string.
+- The assigned color/border-style pair is applied to that event's text/left-border in the grid. Pairing a border style with the color means tags stay distinguishable by shape even when printed in black and white, where color alone becomes indistinguishable grays.
+- A small legend renders below the month header, listing each distinct tag next to a swatch showing its color+border-style, so the coding is decodable from a screenshot (or a B&W printout) alone.
 - Events without a bracketed prefix use the existing default event color.
 
 ## Today Highlight and Navigation
@@ -135,12 +135,25 @@ Day cells that overflow (see Equal-Height Grid) get theme-aware scrollbar stylin
 ## Print Styling
 
 A `@media print` block makes printing the page (e.g. via a browser's print dialog) behave predictably regardless of the params used for the on-screen render:
-- `@page { size: landscape; }` requests landscape orientation by default.
+- No static, always-on `@page` orientation rule — see Print Orientation Buttons below for why and what replaced it.
 - The button bar (`interactive=true` nav/toggle/checkboxes) is hidden — it's a screen-only interaction affordance, not something meaningful on a printed page.
 - Today's cell highlight is removed — printouts are typically made ahead of time or reused, so "today" at render time isn't necessarily meaningful when the page is actually printed/read.
 - The page always prints in the light color scheme, overriding whichever `theme` was used on screen, via `!important` rules that outrank the inline `background`/`color` styles JS sets on `.calendar-page` (this is standard CSS cascade behavior — an `!important` author-stylesheet rule beats a non-`!important` inline style).
+- The Equal-Height Grid's fixed-viewport-height/`overflow: hidden`/`overflow-y: auto` layout — which exists specifically for the on-screen screenshot use case — is overridden for print: `.calendar-page` gets `height: auto; overflow: visible`, and `.day-cell`/`.legend-sidebar` get `overflow: visible`, so nothing is clipped and no scrollbars render. With the container's height no longer fixed, CSS Grid's `1fr` row tracks resolve based on content size rather than being forced into equal shares of a fixed height (a spec-defined behavior: `fr` tracks act like `auto` when the grid container's size in that axis is indefinite), so each week's row naturally grows to fit its content. `page-break-inside: avoid` (plus the modern `break-inside: avoid`) on day cells keeps a single day's content from splitting across a page break; a month with enough events can still span multiple printed pages, which is expected/acceptable — the point is that content is never silently lost, only paginated.
 
-Out of scope: the grid's fixed-viewport-height/`overflow: hidden` layout (see Equal-Height Grid) is unchanged for print, so a day cell with more events than fit its row will still be clipped rather than reflowing across a taller printed page — print output isn't paginated/reflowed, only re-themed per the four points above.
+## Print Orientation Buttons
+
+Getting print orientation right went through two failed attempts before landing here, both confirmed by real testing (not just spec-reading), because print-dialog/`@page` interaction turns out to be inconsistent across the two states that matter:
+
+1. **`@page { size: landscape; }` always on** — assumed to be just a default suggestion per the CSS Paged Media spec. In practice, Chrome treated the `landscape` keyword as authoritative for the page box and overrode the print dialog's orientation picker entirely: selecting "Portrait" in the dialog had no effect.
+2. **No `@page` rule at all** — orientation left fully to the print dialog. In practice, this got stuck defaulting to portrait, with no reliable way to get landscape from the dialog either.
+
+Since a static rule is unreliable in both directions, `interactive=true` mode instead renders two buttons — **🖨️ Print Landscape** and **🖨️ Print Portrait** — that call `printWithOrientation(orientation)`:
+- Injects a `<style media="print">` with `@page { size: <orientation>; }` into `<head>` right before printing.
+- Calls `window.print()`.
+- Removes the injected style on the `afterprint` event, so the override doesn't leak into a later plain Ctrl+P / browser-menu print (which still has no forced orientation, and is expected to have the same unreliable-default behavior described above — that's an accepted gap for the un-buttoned path).
+
+This is the one place in the renderer where a button triggers actual JS behavior (`window.print()`) rather than a URL-param + reload — printing fundamentally can't be represented as a URL param, so the link-based navigation pattern used everywhere else doesn't apply here.
 
 ## Equal-Height Grid
 
