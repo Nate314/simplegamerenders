@@ -7,7 +7,7 @@ const MONTH_NAMES = [
 const TAG_COLORS = ['#e67e22', '#9b59b6', '#1abc9c', '#e74c3c', '#3498db', '#f1c40f', '#2ecc71', '#95a5a6'];
 // Paired with TAG_COLORS by index so tags stay distinguishable by shape, not
 // just color -- color alone disappears when printing in black and white.
-const TAG_BORDER_STYLES = ['solid', 'dashed', 'dotted', 'double'];
+const TAG_BORDER_STYLES = ['solid', 'dotted', 'double', 'dashed'];
 const TAG_PATTERN = /^\[([^\]]+)\]\s*/;
 
 function getParams(url) {
