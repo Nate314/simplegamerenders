@@ -28,8 +28,21 @@ Optional:
 - `apiKey` — a Google Cloud API key; switches the data source to the Google Calendar API v3 (see below). **Required for any real deployment** — the default data source only works for local testing.
 - `weeklyEvent` — repeatable, `<Day>|<StartHH:MM>|<EndHH:MM>|<Title>[|<Location>]`; renders a synthetic event on every occurrence of `<Day>` in the displayed month, without it needing to exist on the actual Google Calendar. `<Day>` is a weekday name (`Sun`, `Mon`, ..., or full names like `Sunday`); times are 24-hour, interpreted in the page's `tz`. Example: `&weeklyEvent=Sun|09:30|10:30|%5BWeekly%5D%20Sunday%20Morning%20Service|Westside%20Church%20of%20the%20Nazarene`. Useful for standing recurring events you'd rather keep off the calendar (so the calendar stays uncluttered for one-off items). If a `weeklyEvent` occurrence's date/start/end/location happens to also match a real calendar event (e.g. it hasn't been deleted from the calendar yet), only the real calendar event is shown — it always wins over its synthetic counterpart.
 - `overrideEmoji` — an emoji (or any short string) appended to the end of the title of any event that has replaced another via the `[Override]` mechanism (see below), e.g. `&overrideEmoji=⭐`. Omit to leave overridden titles unchanged.
+- `config` — a URL to a public JSON file (e.g. an object in a public GCP Cloud Storage bucket) providing any of the above params instead of URL-encoding them by hand. See below.
 
 Event summaries prefixed with `[Tag] ` (e.g. `[Weekly] Sunday Morning Service`) get the `[Tag]` stripped and colored per-tag, with a legend explaining the colors.
+
+### Reading params from a JSON config file
+
+Instead of URL-encoding `weeklyEvent`/`locationEmoji` pipe-and-colon strings by hand, point `config` at a public JSON file with the same information in a more readable, structured form:
+
+```
+calendar/index.html?config=https://storage.googleapis.com/<bucket>/<file>.json
+```
+
+The JSON object can set any of: `calendarId`, `tz`, `apiKey`, `theme`, `month`, `interactive`, `overrideEmoji`, `locationEmoji` (array of `{ "pattern": "<regex>", "emoji": "<emoji>" }`), `weeklyEvent` (array of `{ "day": "<Sun..Sat>", "start": "<HH:MM>", "end": "<HH:MM>", "title": "<title>", "location": "<location>" }`). See `calendar/driftwood-calendar-config.json` (local-only, not committed) for a worked example.
+
+The URL and the config file can be combined: any param present directly in the URL takes precedence over the same field in the config file. This is what makes the button bar's Prev/Next/Today/theme-toggle/checkbox links work when a `config` is in play — those links carry `month`, `theme`, `showDescriptions`, and `hideLocations` explicitly in the URL, overriding whatever the config file says for those specific fields, while everything else (`calendarId`, `apiKey`, `weeklyEvent`, etc.) keeps coming from the config file. The config file must be served with CORS headers allowing this page's origin. A public GCS object does **not** send CORS headers by default — the bucket needs a CORS config applied (`gsutil cors set`) allowing `https://simplegamerenders.nathangawith.com` (and `http://localhost:8123` for local testing), or the browser fetch will be blocked.
 
 ### Overriding an event
 

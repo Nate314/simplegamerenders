@@ -128,6 +128,41 @@ function parseWeeklyEventParams(url) {
     .filter(def => def !== null);
 }
 
+function fetchConfig(url) {
+  return fetch(url).then(resp => {
+    if (!resp.ok) {
+      throw new Error(`Failed to fetch config (status ${resp.status})`);
+    }
+    return resp.json();
+  });
+}
+
+function locationEmojiMappingsFromConfig(entries) {
+  return (entries || [])
+    .map(entry => {
+      try {
+        return { regex: new RegExp(entry.pattern, 'i'), emoji: entry.emoji };
+      } catch (err) {
+        console.error('Invalid locationEmoji config pattern:', entry.pattern, err);
+        return null;
+      }
+    })
+    .filter(mapping => mapping !== null);
+}
+
+function weeklyEventDefsFromConfig(entries) {
+  return (entries || [])
+    .map(entry => {
+      const dayIndex = DAY_NAMES.findIndex(name => name.toLowerCase() === String(entry.day).toLowerCase());
+      if (dayIndex === -1) {
+        console.error('Invalid weeklyEvent config day:', entry.day);
+        return null;
+      }
+      return { dayIndex, startTime: entry.start, endTime: entry.end, title: entry.title, location: entry.location || '' };
+    })
+    .filter(def => def !== null);
+}
+
 function buildOverrideKey(dayKey, startTime, endTime, location) {
   return `${dayKey}|${startTime}|${endTime}|${normalizeLocationKey(location || '')}`;
 }
@@ -550,7 +585,7 @@ function printWithOrientation(orientation) {
 }
 window.printWithOrientation = printWithOrientation;
 
-function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth, rawLocationEmojiParams, rawWeeklyEventParams, apiKey, overrideEmoji }) {
+function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth, rawLocationEmojiParams, rawWeeklyEventParams, apiKey, overrideEmoji, configUrl }) {
   if (!interactive) {
     return '';
   }
@@ -565,7 +600,8 @@ function renderButtonBar({ calendarId, tz, year, month, theme, interactive, show
   const todayMonth = formatMonthParam(todayYearMonth);
   const apiKeyParam = apiKey ? `&apiKey=${encodeURIComponent(apiKey)}` : '';
   const overrideEmojiParam = overrideEmoji ? `&overrideEmoji=${encodeURIComponent(overrideEmoji)}` : '';
-  const baseParams = `calendarId=${encodeURIComponent(calendarId)}&tz=${encodeURIComponent(tz)}&interactive=true${apiKeyParam}${overrideEmojiParam}${rawLocationEmojiParams}${rawWeeklyEventParams}`;
+  const configParam = configUrl ? `&config=${encodeURIComponent(configUrl)}` : '';
+  const baseParams = `calendarId=${encodeURIComponent(calendarId)}&tz=${encodeURIComponent(tz)}&interactive=true${apiKeyParam}${overrideEmojiParam}${configParam}${rawLocationEmojiParams}${rawWeeklyEventParams}`;
   const isOnCurrentMonth = currentMonth === todayMonth;
 
   const toggleFlags = showDescriptions || hideLocations
@@ -647,7 +683,7 @@ function renderEvent(event, tz, stylesByTag, numbersByLocation, showDescriptions
   `;
 }
 
-function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, locationEmojiMappings, apiKey, overrideEmoji, events }) {
+function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, locationEmojiMappings, apiKey, overrideEmoji, configUrl, events }) {
   const backgroundColor = theme === 'light' ? '#FFFFFF' : '#36393F';
   const textColor = theme === 'light' ? '#000000' : '#FFFFFF';
   const stylesByTag = assignTagStyles(events);
@@ -694,7 +730,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
 
   document.getElementById('content').innerHTML = `
     <div class="calendar-page theme-${theme}" style="background: ${backgroundColor}; color: ${textColor};">
-      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz), rawLocationEmojiParams: getRawParamString(location.href, 'locationEmoji'), rawWeeklyEventParams: getRawParamString(location.href, 'weeklyEvent'), apiKey, overrideEmoji })}
+      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz), rawLocationEmojiParams: configUrl ? '' : getRawParamString(location.href, 'locationEmoji'), rawWeeklyEventParams: configUrl ? '' : getRawParamString(location.href, 'weeklyEvent'), apiKey, overrideEmoji, configUrl })}
       <h4 class="text-center month-title">${MONTH_NAMES[month - 1]} ${year}</h4>
       <div class="main-area">
         <div class="calendar-grid" style="grid-template-rows: auto repeat(${numWeeks}, 1fr);">
@@ -715,33 +751,67 @@ function renderError(message) {
   `;
 }
 
-const params = getParams(location.href);
-const weeklyEventDefs = parseWeeklyEventParams(location.href);
-console.log('params', { ...params, locationEmoji: getAllParamValues(location.href, 'locationEmoji'), weeklyEvent: weeklyEventDefs });
+// The URL always wins over config when a field is present in both -- nav (Prev/Next/Today,
+// theme toggle, the description/location checkboxes) works by round-tripping the current
+// state through explicit URL params, and those must be able to override a config default,
+// not be permanently pinned by it.
+function resolveField(urlValue, configValue) {
+  return (urlValue !== undefined && urlValue !== '') ? urlValue : configValue;
+}
 
-if (!isAllDefined([params.calendarId, params.tz])) {
-  renderError('Missing required query params: calendarId, tz');
-} else {
-  const theme = params.theme === 'light' ? 'light' : 'dark';
-  const interactive = params.interactive === 'true';
-  const showDescriptions = interactive && params.showDescriptions === 'true';
-  const hideLocations = interactive && params.hideLocations === 'true';
-  const locationEmojiMappings = parseLocationEmojiMappings(location.href);
-  const { year, month } = getTargetYearMonth(params.month, params.tz);
+function resolveBool(urlValue, configValue) {
+  return (urlValue !== undefined && urlValue !== '') ? urlValue === 'true' : !!configValue;
+}
 
+function renderWithParams(params, config, configUrl) {
+  const calendarId = resolveField(params.calendarId, config && config.calendarId);
+  const tz = resolveField(params.tz, config && config.tz);
+  const apiKey = resolveField(params.apiKey, config && config.apiKey);
+  const overrideEmoji = resolveField(params.overrideEmoji, config && config.overrideEmoji);
+  const theme = resolveField(params.theme, config && config.theme) === 'light' ? 'light' : 'dark';
+  const monthParam = resolveField(params.month, config && config.month);
+  const interactive = resolveBool(params.interactive, config && config.interactive);
+  const showDescriptions = interactive && resolveBool(params.showDescriptions, config && config.showDescriptions);
+  const hideLocations = interactive && resolveBool(params.hideLocations, config && config.hideLocations);
 
-  fetchEventsForMonth(params.calendarId, params.tz, year, month, params.apiKey)
+  // locationEmoji/weeklyEvent are repeatable -- there's no single "field" to fall back
+  // per-entry, so it's URL-has-any-entries-at-all vs config, not a per-field merge.
+  const urlLocationEmojiValues = getAllParamValues(location.href, 'locationEmoji');
+  const locationEmojiMappings = urlLocationEmojiValues.length
+    ? parseLocationEmojiMappings(location.href)
+    : locationEmojiMappingsFromConfig(config && config.locationEmoji);
+  const urlWeeklyEventDefs = parseWeeklyEventParams(location.href);
+  const weeklyEventDefs = urlWeeklyEventDefs.length
+    ? urlWeeklyEventDefs
+    : weeklyEventDefsFromConfig(config && config.weeklyEvent);
+
+  console.log('params', {
+    calendarId, tz, apiKey, overrideEmoji, theme, month: monthParam, interactive, showDescriptions, hideLocations,
+    locationEmoji: urlLocationEmojiValues.length ? urlLocationEmojiValues : (config && config.locationEmoji) || [],
+    weeklyEvent: weeklyEventDefs,
+    config: configUrl || null,
+  });
+
+  if (!isAllDefined([calendarId, tz])) {
+    renderError('Missing required params: calendarId, tz');
+    return;
+  }
+
+  const { year, month } = getTargetYearMonth(monthParam, tz);
+
+  fetchEventsForMonth(calendarId, tz, year, month, apiKey)
     .then(events => {
-      const weeklyEvents = generateWeeklyEvents(weeklyEventDefs, year, month, params.tz);
-      const resolvedEvents = resolveOverrides(events.concat(weeklyEvents), params.tz, params.overrideEmoji);
+      const weeklyEvents = generateWeeklyEvents(weeklyEventDefs, year, month, tz);
+      const resolvedEvents = resolveOverrides(events.concat(weeklyEvents), tz, overrideEmoji);
       return renderCalendar({
-        calendarId: params.calendarId,
-        tz: params.tz,
+        calendarId,
+        tz,
         year,
         month,
         locationEmojiMappings,
-        apiKey: params.apiKey,
-        overrideEmoji: params.overrideEmoji,
+        apiKey,
+        overrideEmoji,
+        configUrl,
         theme,
         interactive,
         showDescriptions,
@@ -753,4 +823,17 @@ if (!isAllDefined([params.calendarId, params.tz])) {
       console.error(err);
       renderError('Failed to load calendar. Is it public?');
     });
+}
+
+const params = getParams(location.href);
+
+if (params.config) {
+  fetchConfig(params.config)
+    .then(config => renderWithParams(params, config, params.config))
+    .catch(err => {
+      console.error(err);
+      renderError('Failed to load config JSON. Is the URL public and CORS-accessible?');
+    });
+} else {
+  renderWithParams(params, null, null);
 }
