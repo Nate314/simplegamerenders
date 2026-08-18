@@ -76,6 +76,127 @@ function getLocationEmoji(location, mappings) {
   return match ? match.emoji : '';
 }
 
+function parseHm(value) {
+  const [hour, minute] = value.split(':').map(Number);
+  return { hour, minute };
+}
+
+function getTzOffsetMs(date, tz) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date).reduce((acc, p) => {
+    if (p.type !== 'literal') {
+      acc[p.type] = p.value;
+    }
+    return acc;
+  }, {});
+  // Midnight is sometimes rendered as hour "24" rather than "00".
+  const hour = parts.hour === '24' ? 0 : Number(parts.hour);
+  const asUTC = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), hour, Number(parts.minute), Number(parts.second));
+  return asUTC - date.getTime();
+}
+
+function zonedTimeToUtc(year, month, day, hour, minute, tz) {
+  // There's no direct API for "give me the UTC instant for this wall-clock
+  // time in this IANA zone", so this takes the naive UTC interpretation,
+  // checks what that instant actually reads as in the target zone, and
+  // shifts by the difference -- a standard single-pass offset correction.
+  const naiveUTC = Date.UTC(year, month - 1, day, hour, minute);
+  const offset = getTzOffsetMs(new Date(naiveUTC), tz);
+  return new Date(naiveUTC - offset);
+}
+
+function parseWeeklyEventParams(url) {
+  return getAllParamValues(url, 'weeklyEvent')
+    .map(value => {
+      const parts = value.split('|');
+      if (parts.length < 4) {
+        console.error('Invalid weeklyEvent value (expected Day|Start|End|Title[|Location]):', value);
+        return null;
+      }
+      const [day, startTime, endTime, title, location] = parts;
+      const dayIndex = DAY_NAMES.findIndex(name => name.toLowerCase() === day.toLowerCase());
+      if (dayIndex === -1) {
+        console.error('Invalid weeklyEvent day:', day);
+        return null;
+      }
+      return { dayIndex, startTime, endTime, title, location: location || '' };
+    })
+    .filter(def => def !== null);
+}
+
+function buildOverrideKey(dayKey, startTime, endTime, location) {
+  return `${dayKey}|${startTime}|${endTime}|${normalizeLocationKey(location || '')}`;
+}
+
+function buildEventKey(event, tz) {
+  return buildOverrideKey(getDateKeyInTz(event.start, tz), getTimeInTz(event.start, tz), getTimeInTz(event.end, tz), event.location);
+}
+
+// An [Override] event takes the place of any other event (real or a synthetic weeklyEvent
+// occurrence) sharing its date/start/end/location -- so it can replace ANY event, not just
+// weeklyEvent occurrences. The replaced event's tag (e.g. [Weekly]) carries over, since the
+// override is still "that" recurring thing, just changed for the week -- and Override itself
+// is a marker for this mechanism, not a real category, so it never shows as its own tag.
+// The overridden title gets overrideEmoji appended so it's visually flagged as changed.
+function resolveOverrides(events, tz, overrideEmoji) {
+  const groups = new Map();
+  events.forEach(event => {
+    const key = buildEventKey(event, tz);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key).push(event);
+  });
+
+  const result = [];
+  groups.forEach(group => {
+    const overrides = group.filter(event => event.tag === 'Override');
+    if (overrides.length) {
+      const original = group.find(event => event.tag !== 'Override');
+      overrides.forEach(overrideEvent => {
+        result.push({
+          ...overrideEvent,
+          tag: original ? original.tag : null,
+          title: (original && overrideEmoji) ? `${overrideEvent.title} ${overrideEmoji}` : overrideEvent.title,
+        });
+      });
+      return;
+    }
+    // No override in play: if a synthetic weeklyEvent occurrence happens to match a real
+    // calendar event's date/start/end/location (e.g. it hasn't been deleted from the
+    // calendar yet), the real one wins so the event isn't shown twice.
+    const real = group.filter(event => !event.isSynthetic);
+    result.push(...(real.length ? real : group));
+  });
+  return result;
+}
+
+function generateWeeklyEvents(weeklyEventDefs, year, month, tz) {
+  if (!weeklyEventDefs.length) {
+    return [];
+  }
+  const events = [];
+  const total = daysInMonth(year, month);
+  for (let day = 1; day <= total; day++) {
+    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    weeklyEventDefs.forEach(def => {
+      if (def.dayIndex !== weekday) {
+        return;
+      }
+      const startHm = parseHm(def.startTime);
+      const endHm = parseHm(def.endTime);
+      const start = zonedTimeToUtc(year, month, day, startHm.hour, startHm.minute, tz);
+      const end = zonedTimeToUtc(year, month, day, endHm.hour, endHm.minute, tz);
+      events.push({ ...toEventRecord(def.title, def.location, undefined, start, end, false, null), isSynthetic: true });
+    });
+  }
+  return events;
+}
+
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text == null ? '' : text;
@@ -429,7 +550,7 @@ function printWithOrientation(orientation) {
 }
 window.printWithOrientation = printWithOrientation;
 
-function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth, rawLocationEmojiParams, apiKey }) {
+function renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth, rawLocationEmojiParams, rawWeeklyEventParams, apiKey, overrideEmoji }) {
   if (!interactive) {
     return '';
   }
@@ -443,7 +564,8 @@ function renderButtonBar({ calendarId, tz, year, month, theme, interactive, show
   const currentMonth = formatMonthParam({ year, month });
   const todayMonth = formatMonthParam(todayYearMonth);
   const apiKeyParam = apiKey ? `&apiKey=${encodeURIComponent(apiKey)}` : '';
-  const baseParams = `calendarId=${encodeURIComponent(calendarId)}&tz=${encodeURIComponent(tz)}&interactive=true${apiKeyParam}${rawLocationEmojiParams}`;
+  const overrideEmojiParam = overrideEmoji ? `&overrideEmoji=${encodeURIComponent(overrideEmoji)}` : '';
+  const baseParams = `calendarId=${encodeURIComponent(calendarId)}&tz=${encodeURIComponent(tz)}&interactive=true${apiKeyParam}${overrideEmojiParam}${rawLocationEmojiParams}${rawWeeklyEventParams}`;
   const isOnCurrentMonth = currentMonth === todayMonth;
 
   const toggleFlags = showDescriptions || hideLocations
@@ -525,7 +647,7 @@ function renderEvent(event, tz, stylesByTag, numbersByLocation, showDescriptions
   `;
 }
 
-function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, locationEmojiMappings, apiKey, events }) {
+function renderCalendar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, locationEmojiMappings, apiKey, overrideEmoji, events }) {
   const backgroundColor = theme === 'light' ? '#FFFFFF' : '#36393F';
   const textColor = theme === 'light' ? '#000000' : '#FFFFFF';
   const stylesByTag = assignTagStyles(events);
@@ -572,7 +694,7 @@ function renderCalendar({ calendarId, tz, year, month, theme, interactive, showD
 
   document.getElementById('content').innerHTML = `
     <div class="calendar-page theme-${theme}" style="background: ${backgroundColor}; color: ${textColor};">
-      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz), rawLocationEmojiParams: getRawParamString(location.href, 'locationEmoji'), apiKey })}
+      ${renderButtonBar({ calendarId, tz, year, month, theme, interactive, showDescriptions, hideLocations, todayYearMonth: getTargetYearMonth(null, tz), rawLocationEmojiParams: getRawParamString(location.href, 'locationEmoji'), rawWeeklyEventParams: getRawParamString(location.href, 'weeklyEvent'), apiKey, overrideEmoji })}
       <h4 class="text-center month-title">${MONTH_NAMES[month - 1]} ${year}</h4>
       <div class="main-area">
         <div class="calendar-grid" style="grid-template-rows: auto repeat(${numWeeks}, 1fr);">
@@ -594,7 +716,8 @@ function renderError(message) {
 }
 
 const params = getParams(location.href);
-console.log('params', { ...params, locationEmoji: getAllParamValues(location.href, 'locationEmoji') });
+const weeklyEventDefs = parseWeeklyEventParams(location.href);
+console.log('params', { ...params, locationEmoji: getAllParamValues(location.href, 'locationEmoji'), weeklyEvent: weeklyEventDefs });
 
 if (!isAllDefined([params.calendarId, params.tz])) {
   renderError('Missing required query params: calendarId, tz');
@@ -606,20 +729,26 @@ if (!isAllDefined([params.calendarId, params.tz])) {
   const locationEmojiMappings = parseLocationEmojiMappings(location.href);
   const { year, month } = getTargetYearMonth(params.month, params.tz);
 
+
   fetchEventsForMonth(params.calendarId, params.tz, year, month, params.apiKey)
-    .then(events => renderCalendar({
-      calendarId: params.calendarId,
-      tz: params.tz,
-      year,
-      month,
-      locationEmojiMappings,
-      apiKey: params.apiKey,
-      theme,
-      interactive,
-      showDescriptions,
-      hideLocations,
-      events,
-    }))
+    .then(events => {
+      const weeklyEvents = generateWeeklyEvents(weeklyEventDefs, year, month, params.tz);
+      const resolvedEvents = resolveOverrides(events.concat(weeklyEvents), params.tz, params.overrideEmoji);
+      return renderCalendar({
+        calendarId: params.calendarId,
+        tz: params.tz,
+        year,
+        month,
+        locationEmojiMappings,
+        apiKey: params.apiKey,
+        overrideEmoji: params.overrideEmoji,
+        theme,
+        interactive,
+        showDescriptions,
+        hideLocations,
+        events: resolvedEvents,
+      });
+    })
     .catch(err => {
       console.error(err);
       renderError('Failed to load calendar. Is it public?');
