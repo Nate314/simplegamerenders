@@ -1,0 +1,14 @@
+.git
+.gitignore
+.gitattributes
+.gitmodules
+.dockerignore
+.env
+compose-launcher
+Dockerfile
+docker-compose.yml
+run.conf
+run.ps1
+run.sh
+calendar/driftwood-calendar-url.md
+calendar/driftwood-calendar-config.json
